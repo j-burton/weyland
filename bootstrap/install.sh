@@ -17,6 +17,38 @@ OWNER="j-burton"
 DEFAULT_DOMAIN_ROOT="julianburton.com"
 STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 
+# Where to find the weyland repo on disk. Normally $0 resolves to a
+# real path (script was downloaded + run). When piped via
+# `bash <(curl ...)`, $0 is /dev/fd/<N> so we have to clone weyland
+# to a temp dir to get the templates/, connector/, etc.
+WEYLAND_REPO_DIR=""
+
+resolve_weyland_dir() {
+  if [ -n "$WEYLAND_REPO_DIR" ] && [ -d "$WEYLAND_REPO_DIR/templates" ]; then
+    echo "$WEYLAND_REPO_DIR"
+    return 0
+  fi
+
+  local script_path="${BASH_SOURCE[0]:-$0}"
+  local candidate
+  candidate="$(cd "$(dirname "$script_path")/.." 2>/dev/null && pwd)" || true
+
+  if [ -n "$candidate" ] && [ -d "$candidate/templates" ] && [ -d "$candidate/connector" ]; then
+    WEYLAND_REPO_DIR="$candidate"
+    echo "$WEYLAND_REPO_DIR"
+    return 0
+  fi
+
+  # Fallback: clone weyland to a temp dir.
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  log "fetching weyland repo to ${tmp_dir}"
+  git clone --depth 1 https://github.com/j-burton/weyland.git "$tmp_dir" >/dev/null 2>&1 \
+    || die "could not clone weyland repo to ${tmp_dir}"
+  WEYLAND_REPO_DIR="$tmp_dir"
+  echo "$WEYLAND_REPO_DIR"
+}
+
 # Ordered phase list, used by the progress checklist + the main runner.
 # (name, label) pairs. Update both lists if you add or remove a phase.
 PHASES=(
@@ -378,7 +410,7 @@ phase_per_pi_repo() {
 
   # Seed from weyland templates if the per-Pi repo is empty.
   local weyland_dir
-  weyland_dir="$(cd "$(dirname "$0")/.." && pwd)"  # bootstrap/ -> repo root
+  weyland_dir="$(resolve_weyland_dir)"
 
   # Decide if we need to seed: empty repo means no real files beyond .git.
   local file_count
@@ -584,7 +616,7 @@ EOF
 
   # Step 5: install the wake system (Notification hook + tmux watcher).
   local weyland_dir
-  weyland_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  weyland_dir="$(resolve_weyland_dir)"
   log "installing wake system"
   bash "${weyland_dir}/connector/scripts/install-wake.sh" "$PI_NAME"
 }
@@ -604,7 +636,7 @@ phase_connector() {
   local env_dir="/etc/weyland"
   local env_file="${env_dir}/mcp.env"
   local weyland_dir
-  weyland_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  weyland_dir="$(resolve_weyland_dir)"
 
   # Step 1: copy connector source to /opt/weyland-mcp.
   sudo mkdir -p "$install_dir"
