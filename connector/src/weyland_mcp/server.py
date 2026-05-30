@@ -1,17 +1,23 @@
-"""FastMCP server entry. Wires all the tool modules together.
+"""FastMCP server entry. Wires OAuth provider, consent route, tools.
 
 Uses the official Anthropic MCP Python SDK (`mcp.server.fastmcp.FastMCP`).
-Bearer-token auth is still the active auth path; OAuth layers on top in
-a later handoff.
+Auth: OAuth 2.1 via `WeylandOAuthProvider`. The bearer pasted into the
+`/weyland-consent` form is the actual gate; PKCE is the public-client
+substitute for a client_secret. See oauth.py for the design notes.
 """
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import NotificationOptions
+from pydantic import AnyHttpUrl
 
 from .config import Config, load_config
+from .consent import consent_route
+from .oauth import WeylandOAuthProvider
 from .tools import fs as fs_tools
 from .tools import github as github_tools
 from .tools import net as net_tools
@@ -21,7 +27,7 @@ from .tools import tmux as tmux_tools
 
 
 def build_server(cfg: Config) -> FastMCP:
-    """Construct the FastMCP app, wire whoami + the six tool modules, return it."""
+    """Construct the FastMCP app, wire OAuth + consent + tools, return it."""
     log_path = Path(cfg.log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
@@ -29,6 +35,8 @@ def build_server(cfg: Config) -> FastMCP:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    provider = WeylandOAuthProvider(cfg)
 
     app = FastMCP(
         name=f"weyland-mcp/{cfg.pi_name}",
@@ -41,7 +49,23 @@ def build_server(cfg: Config) -> FastMCP:
         port=cfg.bind_port,
         streamable_http_path="/mcp",
         log_level="INFO",
+        auth_server_provider=provider,
+        auth=AuthSettings(
+            issuer_url=AnyHttpUrl(cfg.public_url),
+            resource_server_url=AnyHttpUrl(cfg.public_url),
+            required_scopes=[],
+            client_registration_options=ClientRegistrationOptions(enabled=False),
+        ),
     )
+
+    # Bearer-gated consent form — claude.ai's OAuth /authorize redirects here.
+    # We wrap consent_route in a closure so the cfg + provider are bound at
+    # mount time; the actual handler signature stays (request) -> Response,
+    # which is what FastMCP.custom_route expects.
+    async def _consent_handler(request):
+        return await consent_route(request, cfg, provider)
+
+    app.custom_route("/weyland-consent", methods=["GET", "POST"])(_consent_handler)
 
     # Identity / discovery verb.
     @app.tool()
@@ -62,7 +86,44 @@ def build_server(cfg: Config) -> FastMCP:
     net_tools.register(app, cfg)
     github_tools.register(app, cfg)
 
+    _force_tools_changed(app)
+
     return app
+
+
+def _force_tools_changed(app: FastMCP) -> None:
+    """Force tools.listChanged=true on the underlying low-level Server.
+
+    Lifted verbatim from argos-mcp's server.py. FastMCP 1.27.x calls the
+    low-level server's create_initialization_options() with no arguments,
+    which defaults to NotificationOptions() with tools_changed=False — the
+    cached value gets advertised forever and MCP clients (notably
+    claude.ai's connector) never re-poll tools/list when the server
+    restarts with a different tool set. There's no constructor knob on
+    FastMCP for this; we patch the method directly on the underlying
+    _mcp_server instance to inject tools_changed=True.
+
+    Without this, every new MCP tool shipped silently fails to appear in
+    chat-Claude until the user manually re-registers the connector in
+    claude.ai.
+    """
+    _orig_create_init_opts = app._mcp_server.create_initialization_options
+
+    def _create_init_opts_with_tools_changed(
+        notification_options: NotificationOptions | None = None,
+        experimental_capabilities: dict | None = None,
+    ):
+        # Honour an explicit NotificationOptions if one is passed (forward-
+        # compat: a future FastMCP version might start supplying its own),
+        # but force tools_changed=True regardless so the cap never goes back
+        # to False through this path.
+        if notification_options is None:
+            notification_options = NotificationOptions(tools_changed=True)
+        else:
+            notification_options.tools_changed = True
+        return _orig_create_init_opts(notification_options, experimental_capabilities)
+
+    app._mcp_server.create_initialization_options = _create_init_opts_with_tools_changed
 
 
 def run(app: FastMCP) -> None:

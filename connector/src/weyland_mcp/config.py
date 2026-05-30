@@ -15,12 +15,19 @@ class Config:
     pi_name: str
     pi_repo: str
     pi_dir: str
+    # OAuth (added in Handoff U). The connector mints per-session access
+    # tokens against this fixed client_id; the bearer above is what users
+    # paste into the consent form to authorize a new token.
+    oauth_client_id: str
+    token_store_path: str
 
 
 _DEFAULTS = {
     "WEYLAND_BIND_HOST": "127.0.0.1",
     "WEYLAND_BIND_PORT": "5002",
     "WEYLAND_LOG_PATH": "/var/log/weyland-mcp.log",
+    "WEYLAND_OAUTH_CLIENT_ID": "weyland-mcp-claude-ai",
+    "WEYLAND_TOKEN_STORE": "/var/lib/weyland-mcp/tokens.json",
 }
 
 _REQUIRED = (
@@ -52,4 +59,6 @@ def load_config() -> Config:
         pi_name=_env("WEYLAND_PI_NAME"),
         pi_repo=_env("WEYLAND_PI_REPO"),
         pi_dir=_env("WEYLAND_PI_DIR"),
+        oauth_client_id=_env("WEYLAND_OAUTH_CLIENT_ID"),
+        token_store_path=_env("WEYLAND_TOKEN_STORE"),
     )
