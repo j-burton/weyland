@@ -1,56 +1,57 @@
 # weyland
 
-The forge for Julian's Pi fleet — bootstrap and shared infrastructure.
+Bootstrap and remote-control layer for Julian's Raspberry Pi fleet.
+Each Pi ("minion") is set up by one curl command, after which it
+lives in its own GitHub repo and is reachable from any Claude surface
+(web, desktop, mobile) via a custom connector.
 
-## What this repo is
+## Bootstrap a new Pi
 
-`weyland` is the **factory** that produces fleet-ready Pis. It is identical for every Pi, forever. It contains:
+SSH into a fresh Pi running Raspberry Pi OS (or any Debian-family
+Linux), then paste:
 
-- `bootstrap/` — the install script a fresh Pi runs to join the fleet.
-- `connector/` — source for the MCP connector that each Pi runs so chat-Claude can reach it.
-- `templates/` — per-Pi document templates copied into each new per-Pi repo at bootstrap time.
-- `docs/` — design docs about the fleet itself.
+```
+curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh | bash
+```
 
-## What this repo is NOT
+That's the whole bootstrap. Expect ~5 minutes and three browser
+dances (GitHub, Cloudflare, Anthropic). Detailed walkthrough in
+`docs/NEW_PI.md`.
 
-Each Pi has its **own separate repo** for its identity, state, history, and work. That repo is named after the Pi (e.g. `coffee-pi`, `unifi-pi`) and is created automatically by the bootstrap script.
+## What you get
 
-If you're a chat-Claude opened to work on a specific Pi, you are in the wrong place — go read that Pi's own repo.
+When the bootstrap finishes:
 
-## The bootstrap ritual
+- A new private GitHub repo at `j-burton/<pi-name>-pi` to hold this
+  Pi's state, modules, and handoffs.
+- A Cloudflare tunnel exposing the Pi's MCP service at
+  `https://<pi-name>.julianburton.com/mcp`.
+- Claude Code running in a tmux session named after the Pi.
+- A wake system that pings Julian's phone via Pushcut when CC stalls
+  or finishes a task.
+- A bearer token + URL printed at the end — paste those into Claude
+  Desktop's "Add custom connector" dialog to make the Pi reachable.
 
-Julian's perspective:
+## Repo layout
 
-1. Install fresh Pi OS on a Pi. Get it on the network. Find its IP.
-2. SSH in.
-3. Paste **one command** (see `docs/NEW_PI.md`).
-4. Answer one question: what should the Pi be called?
-5. Do two browser Authorize dances (GitHub, Cloudflare). Each is one click.
-6. When the script finishes, create a new Claude Desktop project pointed at the per-Pi repo it created. This is the only GUI step.
-7. Done. From here on, everything for that Pi happens by talking to Claude in its project.
+- `bootstrap/install.sh` — the one-liner. 8 phases, each idempotent.
+- `connector/` — the Python MCP service that runs on each Pi.
+- `connector/scripts/` — the wake system (`cc-notify` hook +
+  `cc-tmux-watcher` daemon, `install-wake.sh` installer).
+- `connector/systemd/` — systemd unit templates.
+- `templates/` — files seeded into each per-Pi repo at bootstrap.
+- `docs/` — design rationale (`DESIGN.md`), operating notes
+  (`OPERATING.md`), the full new-Pi walkthrough (`NEW_PI.md`).
 
-## What the bootstrap does
+## When something breaks
 
-When the install script runs on a fresh Pi:
+The bootstrap is re-runnable. Run the curl command again — completed
+phases are skipped. If it's truly stuck, reflash the SD card and start
+over. The recovery model for minions is reflash, not repair.
 
-- Installs Claude Code, signs in.
-- Installs the weyland MCP connector (from `connector/` in this repo) and registers it.
-- Sets up a Cloudflare tunnel so chat-Claude can reach the Pi from anywhere.
-- Creates a new GitHub repo `<pi-name>-pi` under `j-burton`, seeded from `templates/`.
-- Clones the new per-Pi repo onto the Pi.
-- Starts a long-lived tmux session for CC.
-- Prints the per-Pi repo URL and the Claude-project-creation reminder.
+## Editing weyland
 
-## How a chat-Claude on the weyland project should orient
-
-If you're opened in a chat scoped to `weyland` (not a specific Pi), read in order:
-
-1. This README.
-2. `docs/DESIGN.md` — fleet architecture, why we made certain choices.
-3. `docs/OPERATING.md` — how chat-Claude actually runs sessions for weyland itself.
-
-You will not be solving Pi-specific problems here. You will be improving the factory: editing the install script, the connector, the templates, the docs.
-
-## Status
-
-Early. Bootstrap script is in development. First Pi to be onboarded: TBD.
+After the first minion is up, weyland edits itself. Open a Claude
+project pointed at any minion's repo, ask for a bootstrap change, and
+that minion's CC will clone weyland, make the change, and push.
+Future minions get the improvement automatically.
