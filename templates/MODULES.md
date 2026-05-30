@@ -1,8 +1,22 @@
 # MODULES
 
-**Status: placeholder, not yet written.**
+Per-app/service inventory for this Pi. Each module gets its own
+section.
 
-Per-app/service inventory for this Pi.
+## Format
 
-See weyland's README.md for the overall architecture. This file will be
-fleshed out as the bootstrap design is finalized.
+For each module:
+
+```
+## <module name>
+
+**What it does:** one sentence.
+**Where it lives:** path on disk.
+**How to start/stop:** systemd unit or command.
+**Config:** path to config files.
+**Logs:** path to log files.
+**Last verified working:** date.
+```
+
+(empty until the Pi gains its first module — chat-Claude adds entries
+as new software is installed)
