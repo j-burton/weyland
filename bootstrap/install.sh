@@ -105,8 +105,22 @@ phase_identity() {
   fi
 
   # PI_NAME: lowercase, alnum + hyphens, 2-32 chars, no leading/trailing hyphen.
+  # Default to the Pi's current hostname if it's a valid name AND isn't the
+  # generic 'raspberrypi'. Otherwise no default — make the user pick.
+  local current_host
+  current_host="$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  local default_name=""
+  if [[ "$current_host" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]] \
+     && [ "$current_host" != "raspberrypi" ]; then
+    default_name="$current_host"
+  fi
   while :; do
-    read -r -p "What should this Pi be called? " name
+    if [ -n "$default_name" ]; then
+      read -r -p "What should this Pi be called? [${default_name}] " name
+      name="${name:-$default_name}"
+    else
+      read -r -p "What should this Pi be called? " name
+    fi
     if [[ "$name" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
       break
     fi
