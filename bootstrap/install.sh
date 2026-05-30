@@ -50,13 +50,45 @@ load_state() {
 phase_preflight() {
   log "Phase 0: pre-flight checks"
 
-  # TODO: confirm Debian-family OS (Raspberry Pi OS / Ubuntu / Debian).
-  # TODO: confirm sudo works without prompting more than once.
-  # TODO: confirm we have network egress to github.com + cloudflare.com.
-  # TODO: confirm we're NOT re-running on a Pi that's already bootstrapped
-  #       (check $STATE_DIR/env — if PI_NAME is set, prompt before continuing).
+  # OS family check (Debian-family only).
+  if [ ! -f /etc/os-release ]; then
+    die "cannot detect OS — /etc/os-release missing"
+  fi
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case "${ID_LIKE:-$ID}" in
+    *debian*) : ;;
+    *) die "weyland targets Debian-family only; saw ID=${ID:-?} ID_LIKE=${ID_LIKE:-?}" ;;
+  esac
 
-  warn "phase_preflight is a stub"
+  # sudo must be available and password-less (or already cached).
+  require_cmd sudo
+  if ! sudo -n true 2>/dev/null; then
+    log "sudo will prompt for your password once now; future calls cache."
+    sudo true || die "sudo is required for the install"
+  fi
+
+  # Network egress sanity — github and cloudflare are the must-haves.
+  for host in github.com api.cloudflare.com; do
+    if ! curl -fsS --max-time 5 -o /dev/null "https://${host}"; then
+      die "no network egress to ${host}"
+    fi
+  done
+
+  # Re-run guard: if PI_NAME is already set in state, ask before continuing.
+  if [ -f "$STATE_DIR/env" ]; then
+    load_state
+    if [ -n "${PI_NAME:-}" ]; then
+      warn "This Pi is already named '${PI_NAME}'."
+      read -r -p "Continue anyway (re-run)? [y/N] " ans
+      case "${ans,,}" in
+        y|yes) : ;;
+        *) die "aborted by user" ;;
+      esac
+    fi
+  fi
+
+  log "pre-flight OK"
 }
 
 # ----------------------------------------------------------------------
@@ -65,11 +97,31 @@ phase_preflight() {
 phase_identity() {
   log "Phase 1: identity"
 
-  # TODO: prompt for PI_NAME (lowercase, alnum + hyphens).
-  # TODO: prompt for DOMAIN (default: <PI_NAME>.$DEFAULT_DOMAIN_ROOT).
-  # TODO: save_state PI_NAME, DOMAIN.
+  # Skip if already set (re-run case).
+  load_state
+  if [ -n "${PI_NAME:-}" ] && [ -n "${DOMAIN:-}" ]; then
+    log "identity already set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
+    return 0
+  fi
 
-  warn "phase_identity is a stub"
+  # PI_NAME: lowercase, alnum + hyphens, 2-32 chars, no leading/trailing hyphen.
+  while :; do
+    read -r -p "What should this Pi be called? " name
+    if [[ "$name" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
+      break
+    fi
+    warn "invalid name. Use lowercase letters, digits, hyphens. 2-32 chars. No leading/trailing hyphen."
+  done
+  PI_NAME="$name"
+  save_state PI_NAME "$PI_NAME"
+
+  # DOMAIN: default to <PI_NAME>.$DEFAULT_DOMAIN_ROOT, accept override.
+  local default_domain="${PI_NAME}.${DEFAULT_DOMAIN_ROOT}"
+  read -r -p "Domain for this Pi's MCP endpoint? [${default_domain}] " dom
+  DOMAIN="${dom:-$default_domain}"
+  save_state DOMAIN "$DOMAIN"
+
+  log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
 
 # ----------------------------------------------------------------------
@@ -78,12 +130,43 @@ phase_identity() {
 phase_packages() {
   log "Phase 2: install system packages"
 
-  # TODO: apt update.
-  # TODO: apt install -y git curl tmux python3 python3-venv ca-certificates.
-  # TODO: install gh (GitHub CLI) from official apt repo.
-  # TODO: install cloudflared from official cloudflare apt repo.
+  # Base packages.
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq \
+    git curl tmux ca-certificates gnupg lsb-release \
+    python3 python3-venv python3-pip
 
-  warn "phase_packages is a stub"
+  # GitHub CLI (gh) — official apt repo.
+  if ! command -v gh >/dev/null 2>&1; then
+    log "installing gh"
+    local keyring="/usr/share/keyrings/githubcli-archive-keyring.gpg"
+    sudo install -m 0755 -d /usr/share/keyrings
+    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | sudo gpg --dearmor --yes -o "$keyring"
+    sudo chmod a+r "$keyring"
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=${keyring}] https://cli.github.com/packages stable main" \
+      | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq gh
+  else
+    log "gh already installed"
+  fi
+
+  # cloudflared — official Cloudflare apt repo.
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    log "installing cloudflared"
+    local cf_keyring="/usr/share/keyrings/cloudflare-main.gpg"
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+      | sudo tee "$cf_keyring" >/dev/null
+    echo "deb [signed-by=${cf_keyring}] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+      | sudo tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq cloudflared
+  else
+    log "cloudflared already installed"
+  fi
+
+  log "packages installed"
 }
 
 # ----------------------------------------------------------------------
