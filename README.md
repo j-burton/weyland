@@ -1,9 +1,9 @@
 # weyland
 
-In Norse and Anglo-Saxon legend, Wayland was the master smith — an
-exiled craftsman who forged enchanted weapons and armour for kings
-and gods. This Wayland forges Claude-driven Raspberry Pi minions
-instead.
+Wayland, the legendary smith of Norse and Anglo-Saxon myth, once
+forged enchanted weapons for kings and gods. He serves a new master
+now: Julian, and the Claude-driven Raspberry Pi minions he forges
+for him.
 
 Each Pi ("minion") is set up by one curl command, after which it
 lives in its own GitHub repo and is reachable from any Claude surface
