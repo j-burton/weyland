@@ -305,13 +305,82 @@ phase_per_pi_repo() {
 phase_tunnel() {
   log "Phase 5: Cloudflare tunnel"
 
-  # TODO: cloudflared tunnel login (browser dance).
-  # TODO: cloudflared tunnel create $PI_NAME.
-  # TODO: write config.yml pointing $DOMAIN → http://localhost:5002 (MCP).
-  # TODO: cloudflared tunnel route dns $PI_NAME $DOMAIN.
-  # TODO: install cloudflared as a systemd service.
+  load_state
+  [ -n "${PI_NAME:-}" ] || die "PI_NAME not set; phase 1 must run first"
+  [ -n "${DOMAIN:-}"  ] || die "DOMAIN not set; phase 1 must run first"
 
-  warn "phase_tunnel is a stub"
+  local tunnel_name="$PI_NAME"
+  local tunnel_dir="/etc/cloudflared"
+  local config_file="${tunnel_dir}/config.yml"
+
+  sudo mkdir -p "$tunnel_dir"
+
+  # Step 1: cloudflared login (browser dance).
+  if [ ! -f "$HOME/.cloudflared/cert.pem" ]; then
+    cat <<EOF
+
+  cloudflared needs to authenticate with Cloudflare.
+
+  A URL will appear below. Open it in any browser, log in to Cloudflare,
+  and select the zone for ${DEFAULT_DOMAIN_ROOT}.
+
+EOF
+    cloudflared tunnel login
+  else
+    log "cloudflared already authenticated (cert.pem present)"
+  fi
+
+  # Step 2: create the tunnel if it doesn't exist.
+  local tunnel_id
+  tunnel_id="$(cloudflared tunnel list -o json 2>/dev/null \
+    | python3 -c "import json,sys; d=json.load(sys.stdin); print(next((t['id'] for t in d if t['name']=='${tunnel_name}'),''))" \
+    2>/dev/null || true)"
+  if [ -z "$tunnel_id" ]; then
+    log "creating tunnel '${tunnel_name}'"
+    cloudflared tunnel create "$tunnel_name"
+    tunnel_id="$(cloudflared tunnel list -o json \
+      | python3 -c "import json,sys; d=json.load(sys.stdin); print(next(t['id'] for t in d if t['name']=='${tunnel_name}'))")"
+  else
+    log "tunnel '${tunnel_name}' already exists (id ${tunnel_id})"
+  fi
+  save_state TUNNEL_ID "$tunnel_id"
+
+  # Step 3: write config.yml routing $DOMAIN -> localhost:5002 (MCP).
+  local creds_file="$HOME/.cloudflared/${tunnel_id}.json"
+  if [ ! -f "$creds_file" ]; then
+    die "tunnel credentials file missing at ${creds_file}"
+  fi
+  sudo cp "$creds_file" "${tunnel_dir}/${tunnel_id}.json"
+  sudo chmod 0640 "${tunnel_dir}/${tunnel_id}.json"
+
+  sudo tee "$config_file" >/dev/null <<EOF
+tunnel: ${tunnel_id}
+credentials-file: ${tunnel_dir}/${tunnel_id}.json
+
+ingress:
+  - hostname: ${DOMAIN}
+    service: http://localhost:5002
+  - service: http_status:404
+EOF
+
+  # Step 4: DNS route.
+  log "routing ${DOMAIN} -> tunnel ${tunnel_name}"
+  cloudflared tunnel route dns "$tunnel_name" "$DOMAIN" \
+    || warn "DNS route may already exist (or zone not selected); continuing"
+
+  # Step 5: install + start cloudflared as a systemd service.
+  sudo cloudflared --config "$config_file" service install \
+    || warn "cloudflared service install reported a warning; continuing"
+  sudo systemctl enable cloudflared
+  sudo systemctl restart cloudflared
+
+  # Brief smoke: wait a few seconds and check status.
+  sleep 3
+  if ! sudo systemctl is-active --quiet cloudflared; then
+    warn "cloudflared service is not active; check 'sudo systemctl status cloudflared'"
+  else
+    log "cloudflared running; tunnel ${tunnel_name} routes ${DOMAIN}"
+  fi
 }
 
 # ----------------------------------------------------------------------
@@ -320,12 +389,74 @@ phase_tunnel() {
 phase_claude_code() {
   log "Phase 6: install Claude Code"
 
-  # TODO: install CC via the official installer.
-  # TODO: arrange for CC auth (open question — see docs/DESIGN.md when written).
-  # TODO: start a long-lived tmux session named 'mcp' running CC.
-  # TODO: arrange for the tmux session to survive reboot.
+  load_state
+  [ -n "${PI_NAME:-}" ] || die "PI_NAME not set; phase 1 must run first"
 
-  warn "phase_claude_code is a stub"
+  # Step 1: install Claude Code if not present.
+  if ! command -v claude >/dev/null 2>&1; then
+    log "installing Claude Code"
+    curl -fsSL https://claude.ai/install.sh | bash \
+      || die "Claude Code install failed"
+    # The installer typically drops the binary in ~/.local/bin or /usr/local/bin.
+    # Ensure ~/.local/bin is on PATH for this shell.
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v claude >/dev/null 2>&1; then
+      die "claude binary not found after install"
+    fi
+  else
+    log "Claude Code already installed: $(claude --version 2>/dev/null || echo unknown)"
+  fi
+
+  # Step 2: sign in interactively.
+  if ! claude auth status >/dev/null 2>&1; then
+    cat <<EOF
+
+  Claude Code needs to sign in to your Anthropic account.
+
+  A URL will appear below. Open it in any browser, sign in (Google or
+  email), and approve.
+
+EOF
+    claude auth login \
+      || die "claude auth login failed"
+  else
+    log "Claude Code already signed in"
+  fi
+
+  # Step 3: launch CC inside a long-lived tmux session named after the Pi.
+  if ! tmux has-session -t "$PI_NAME" 2>/dev/null; then
+    log "starting tmux session '${PI_NAME}' running CC"
+    tmux new-session -d -s "$PI_NAME" -c "${PI_DIR:-$HOME}" \
+      "claude --dangerously-skip-permissions 2>&1 | tee -a $HOME/.claude/${PI_NAME}.log"
+    # Note: --dangerously-skip-permissions is the "trust the minion" mode
+    # matching the connector's philosophy. The user accepts the risk.
+  else
+    log "tmux session '${PI_NAME}' already exists"
+  fi
+
+  # Step 4: arrange for the tmux session to survive reboot.
+  local restart_unit="/etc/systemd/system/weyland-cc.service"
+  if [ ! -f "$restart_unit" ]; then
+    log "installing weyland-cc.service to restart tmux session on boot"
+    sudo tee "$restart_unit" >/dev/null <<EOF
+[Unit]
+Description=Weyland Claude Code tmux session (${PI_NAME})
+After=network-online.target
+
+[Service]
+Type=forking
+User=${USER}
+ExecStart=/usr/bin/tmux new-session -d -s ${PI_NAME} -c ${PI_DIR:-$HOME} 'claude --dangerously-skip-permissions 2>&1 | tee -a ${HOME}/.claude/${PI_NAME}.log'
+ExecStop=/usr/bin/tmux kill-session -t ${PI_NAME}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable weyland-cc.service
+  fi
 }
 
 # ----------------------------------------------------------------------
@@ -334,13 +465,75 @@ phase_claude_code() {
 phase_connector() {
   log "Phase 7: install weyland MCP connector"
 
-  # TODO: copy connector/ source into /opt/weyland-mcp/.
-  # TODO: create a Python venv, install dependencies.
-  # TODO: render the systemd unit file with PI_NAME, DOMAIN.
-  # TODO: install + enable + start the service.
-  # TODO: smoke test — curl localhost:5002/whoami.
+  load_state
+  [ -n "${PI_NAME:-}" ] || die "PI_NAME not set"
+  [ -n "${DOMAIN:-}"  ] || die "DOMAIN not set"
+  [ -n "${PI_DIR:-}"  ] || die "PI_DIR not set; phase 4 must run first"
 
-  warn "phase_connector is a stub"
+  local install_dir="/opt/weyland-mcp"
+  local env_dir="/etc/weyland"
+  local env_file="${env_dir}/mcp.env"
+  local weyland_dir
+  weyland_dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+  # Step 1: copy connector source to /opt/weyland-mcp.
+  sudo mkdir -p "$install_dir"
+  sudo cp -r "${weyland_dir}/connector/." "$install_dir/"
+  sudo chown -R "${USER}:${USER}" "$install_dir"
+
+  # Step 2: create venv and install deps.
+  if [ ! -d "${install_dir}/.venv" ]; then
+    log "creating venv at ${install_dir}/.venv"
+    python3 -m venv "${install_dir}/.venv"
+  fi
+  log "installing connector deps"
+  "${install_dir}/.venv/bin/pip" install --quiet --upgrade pip
+  "${install_dir}/.venv/bin/pip" install --quiet -e "${install_dir}"
+
+  # Step 3: generate a bearer token (one per Pi, randomly).
+  sudo mkdir -p "$env_dir"
+  if [ ! -f "$env_file" ] || ! grep -q "^WEYLAND_BEARER_TOKEN_HASH=" "$env_file" 2>/dev/null; then
+    local token
+    token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    local token_hash
+    token_hash="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
+
+    sudo tee "$env_file" >/dev/null <<EOF
+WEYLAND_BEARER_TOKEN_HASH=${token_hash}
+WEYLAND_BIND_HOST=127.0.0.1
+WEYLAND_BIND_PORT=5002
+WEYLAND_PUBLIC_URL=https://${DOMAIN}/mcp
+WEYLAND_LOG_PATH=/var/log/weyland-mcp.log
+WEYLAND_PI_NAME=${PI_NAME}
+WEYLAND_PI_REPO=${PI_REPO:-}
+WEYLAND_PI_DIR=${PI_DIR}
+EOF
+    sudo chmod 0640 "$env_file"
+
+    save_state WEYLAND_BEARER_TOKEN "$token"
+    log "generated bearer token (preview in summary)"
+  else
+    log "env file already present at ${env_file}; preserving existing token"
+  fi
+
+  # Step 4: render systemd unit from template and install.
+  local unit_path="/etc/systemd/system/weyland-mcp.service"
+  sudo sed "s|{{ PI_NAME }}|${PI_NAME}|g" \
+    "${install_dir}/systemd/weyland-mcp.service.template" \
+    | sudo tee "$unit_path" >/dev/null
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable weyland-mcp.service
+  sudo systemctl restart weyland-mcp.service
+
+  # Step 5: smoke test.
+  sleep 3
+  if curl -fsS -o /dev/null --max-time 5 \
+      "http://127.0.0.1:5002/mcp" 2>/dev/null; then
+    log "weyland-mcp responding on localhost:5002"
+  else
+    warn "weyland-mcp not responding on localhost yet; check 'sudo journalctl -u weyland-mcp -n 50'"
+  fi
 }
 
 # ----------------------------------------------------------------------
@@ -357,13 +550,17 @@ phase_summary() {
   MCP URL:    https://${DOMAIN:-?}/mcp
   Repo:       https://github.com/${OWNER}/${PI_NAME:-?}-pi
 
-  Next steps (manual, one-time):
-    1. Open Claude Desktop.
-    2. Settings → Connectors → Add custom connector.
-    3. URL: https://${DOMAIN:-?}/mcp
-    4. Create a Claude Project pointed at the per-Pi repo above.
+  --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
 
-  From there, talk to Claude.
+    Name:    ${PI_NAME:-?}
+    URL:     https://${DOMAIN:-?}/mcp
+    Bearer:  ${WEYLAND_BEARER_TOKEN:-(see /var/lib/weyland/env if you missed this)}
+
+  --- THEN ---
+
+    1. Create a Claude Desktop project pointed at the per-Pi repo
+       (https://github.com/${OWNER}/${PI_NAME:-?}-pi).
+    2. Talk to Claude — it can now drive this minion.
 
 EOF
 }
