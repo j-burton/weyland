@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
 from mcp.server.lowlevel.server import NotificationOptions
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
 from .config import Config, load_config
@@ -24,6 +26,35 @@ from .tools import net as net_tools
 from .tools import shell as shell_tools
 from .tools import systemd as systemd_tools
 from .tools import tmux as tmux_tools
+
+
+def _transport_security(cfg: Config) -> TransportSecuritySettings:
+    """Derive allowed Host/Origin lists from the configured public URL +
+    bind address.
+
+    DNS rebinding protection stays on (recommended). Without an explicit
+    `allowed_hosts` list, the SDK rejects every request whose Host header
+    isn't `127.0.0.1` — Claude Desktop's POST /mcp arrives with the public
+    hostname and gets 421 Misdirected Request. We enumerate the public
+    hostname plus loopback variants so both the Cloudflare tunnel's
+    public-host requests and local debug probes work.
+    """
+    public_host = urlparse(cfg.public_url).hostname or ""
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            public_host,
+            f"{cfg.bind_host}:{cfg.bind_port}",
+            cfg.bind_host,
+            "127.0.0.1",
+            "localhost",
+            f"localhost:{cfg.bind_port}",
+        ],
+        allowed_origins=[
+            cfg.public_url,
+            f"http://{cfg.bind_host}:{cfg.bind_port}",
+        ],
+    )
 
 
 def build_server(cfg: Config) -> FastMCP:
@@ -49,6 +80,7 @@ def build_server(cfg: Config) -> FastMCP:
         port=cfg.bind_port,
         streamable_http_path="/mcp",
         log_level="INFO",
+        transport_security=_transport_security(cfg),
         auth_server_provider=provider,
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(cfg.public_url),
