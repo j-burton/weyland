@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""cc-notify — Claude Code Notification hook → Pushcut wake.
+
+Registered as a `Notification` hook in ~/.claude/settings.json. When CC
+raises a notification (idle at turn-end), this reads the hook JSON on
+stdin, builds a one-line summary, checks the wake-mode flag, and fires
+a Pushcut to Julian's phone.
+
+Simplified from Atlas's cc-notify: no PC/AHK path, no wake-flag.json,
+no tailnet dependency. Just Pushcut.
+
+Fast and non-blocking: always exits 0 so it can never block CC.
+"""
+import json
+import os
+import sys
+import time
+import urllib.request
+import urllib.error
+
+PUSHCUT_ENV = "/etc/weyland/pushcut.env"
+WAKE_MODE = "/etc/weyland/wake-mode"
+LOG = "/var/log/weyland-wake.log"
+NOTIF = "CC_Needs_Julian"
+TIMEOUT = 4
+
+# Only act on these notification_type values. Permission prompts are
+# handled by cc-tmux-watcher (see scripts/cc-tmux-watcher).
+ACT_ON_NOTIFICATION_TYPES = {"idle_prompt"}
+
+
+def _read_env_value(path, key):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(key + "="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
+def read_mode():
+    try:
+        with open(WAKE_MODE) as f:
+            val = f.read().strip().lower()
+    except OSError:
+        val = ""
+    return "off" if val == "off" else "on"
+
+
+def read_pi_name():
+    return _read_env_value("/etc/weyland/mcp.env", "WEYLAND_PI_NAME") or "minion"
+
+
+def log(msg):
+    try:
+        with open(LOG, "a") as f:
+            f.write(msg + "\n")
+    except OSError:
+        pass
+
+
+def fire_pushcut(summary, pi_name):
+    secret = _read_env_value(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
+    if not secret:
+        return "0", "no-secret"
+    url = f"https://api.pushcut.io/{secret}/notifications/{NOTIF}"
+    text = f"[{pi_name}] {summary}"
+    body = json.dumps({"text": text[:200]}).encode()
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return str(resp.status), ""
+    except urllib.error.HTTPError as e:
+        return str(e.code), ""
+    except Exception as e:
+        return "0", type(e).__name__
+
+
+def main():
+    raw = sys.stdin.read()
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        data = {}
+
+    event = data.get("hook_event_name") or "Notification"
+    message = data.get("message") or data.get("reason") or ""
+    cwd = data.get("cwd") or ""
+    parts = [event, message, ("cwd=" + cwd if cwd else "")]
+    summary = " · ".join(p for p in parts if p) or "CC idle"
+
+    notification_type = data.get("notification_type") or ""
+    pi_name = read_pi_name()
+
+    if notification_type not in ACT_ON_NOTIFICATION_TYPES:
+        log(f"{ts}  pi={pi_name}  notif=skipped-by-allowlist  "
+            f"type={notification_type!r}  summary={summary!r}")
+        return 0
+
+    mode = read_mode()
+    if mode == "off":
+        log(f"{ts}  pi={pi_name}  mode=off  notif=skipped  "
+            f"summary={summary!r}")
+        return 0
+
+    http_code, err = fire_pushcut(summary, pi_name)
+    log(f"{ts}  pi={pi_name}  mode=on  notif=fired  "
+        f"http={http_code}  err={err}  summary={summary!r}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        sys.exit(0)

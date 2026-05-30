@@ -1,0 +1,17 @@
+[Unit]
+Description=Weyland CC tmux watcher ({{ PI_NAME }})
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ USER }}
+Environment=WEYLAND_PI_NAME={{ PI_NAME }}
+Environment=CC_WATCHER_PANE={{ PI_NAME }}:0
+ExecStart=/usr/local/bin/cc-tmux-watcher
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/weyland-wake.log
+StandardError=append:/var/log/weyland-wake.log
+
+[Install]
+WantedBy=multi-user.target

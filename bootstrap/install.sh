@@ -457,6 +457,12 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl enable weyland-cc.service
   fi
+
+  # Step 5: install the wake system (Notification hook + tmux watcher).
+  local weyland_dir
+  weyland_dir="$(cd "$(dirname "$0")/.." && pwd)"
+  log "installing wake system"
+  bash "${weyland_dir}/connector/scripts/install-wake.sh" "$PI_NAME"
 }
 
 # ----------------------------------------------------------------------

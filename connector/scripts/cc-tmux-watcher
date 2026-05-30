@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""cc-tmux-watcher: poll CC's tmux pane, detect permission prompts, fire wake.
+
+Ported from Atlas's cc-tmux-watcher with all PC/AHK paths stripped. All
+shots fire Pushcut directly to Julian's phone. The 5-shot HAL ladder is
+collapsed to a simpler 3-shot escalation:
+
+  Shot 1 (10s)     — "CC waiting"
+  Shot 2 (5 min)   — "Still waiting"
+  Shot 3 (15 min)  — "May be stuck"
+
+After shot 3 the cycle is locked until the prompt clears or changes.
+
+Stable hashing + 2-poll candidate debounce preserved from Atlas — these
+are the engineering that makes the watcher reliable, not Atlas-specific.
+"""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import time
+import urllib.error
+import urllib.request
+
+PI_NAME = os.environ.get("WEYLAND_PI_NAME") or "minion"
+PANE = os.environ.get("CC_WATCHER_PANE", f"{PI_NAME}:0")
+MODE_FILE = "/etc/weyland/wake-mode"
+PUSHCUT_ENV = "/etc/weyland/pushcut.env"
+STATE_FILE = "/var/lib/weyland/tmux-watcher-state.json"
+LOG = "/var/log/weyland-wake.log"
+
+POLL_SEC = 3
+INITIAL_DELAY_SEC = int(os.environ.get("CC_WATCHER_DELAY", "10"))
+SHOT_2_GAP_SEC   = int(os.environ.get("CC_WATCHER_SHOT2_GAP",   "300"))   # 5 min
+SHOT_3_GAP_SEC   = int(os.environ.get("CC_WATCHER_SHOT3_GAP",   "600"))   # +10 min = 15 min total
+MAX_FIRES = 3
+DEBOUNCE_POLLS = 2
+CLEAR_DEBOUNCE = 2
+
+RETRY_SCHEDULE = [SHOT_2_GAP_SEC, SHOT_3_GAP_SEC]
+
+PROMPT_MARKERS = [
+    "Do you want to proceed?",
+    "Do you want to make this edit",
+    "Do you want to create",
+    "Do you want to overwrite",
+]
+
+SHOT_MESSAGES = {
+    1: "CC waiting on permission prompt",
+    2: "Still waiting (5 min)",
+    3: "CC may be stuck (15 min idle)",
+}
+
+
+def log(msg):
+    ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    try:
+        with open(LOG, "a") as f:
+            f.write(f"{ts} {msg}\n")
+    except OSError:
+        pass
+
+
+def read_kv(path, key):
+    try:
+        with open(path) as f:
+            for line in f:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        return None
+    return None
+
+
+def read_mode():
+    try:
+        with open(MODE_FILE) as f:
+            v = f.read().strip().lower()
+    except Exception:
+        v = ""
+    return "off" if v == "off" else "on"
+
+
+def read_state():
+    try:
+        with open(STATE_FILE) as f:
+            s = json.load(f)
+    except Exception:
+        s = {}
+    return {
+        "pending_hash": s.get("pending_hash"),
+        "pending_since": s.get("pending_since"),
+        "last_fired_hash": s.get("last_fired_hash"),
+        "fire_count": s.get("fire_count", 0),
+        "last_fire_time": s.get("last_fire_time"),
+        "candidate_hash": s.get("candidate_hash"),
+        "candidate_count": s.get("candidate_count", 0),
+    }
+
+
+def write_state(s):
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w") as f:
+            json.dump(s, f)
+    except Exception as e:
+        log(f"state-write-err err={type(e).__name__}")
+
+
+def capture_pane():
+    try:
+        r = subprocess.run(
+            ["tmux", "capture-pane", "-t", PANE, "-p"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return r.stdout if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def detect_prompt(text):
+    if not text:
+        return None
+    for marker in PROMPT_MARKERS:
+        if marker in text:
+            idx = text.find(marker)
+            return text[max(0, idx - 200):idx + 600]
+    return None
+
+
+OPTION_RE = re.compile(
+    r"^[\s│┃|╎┆❯➤→>*\-]*([1-9])[.)]\s+(\S.*?)\s*$")
+_BORDER = " \t│┃|╎┆─╴╶"
+_EDGE = _BORDER + "❯➤→>*"
+_ANIM_RE = re.compile(
+    r"esc to interrupt|\(\d+\s*s|[✶✳✴✦⋆●◐◓◑◒]|tokens|crunch|running…|waiting…|thinking",
+    re.I)
+
+
+def stable_signature(block):
+    lines = block.splitlines()
+    marker_idx = None
+    for i, ln in enumerate(lines):
+        if any(m in ln for m in PROMPT_MARKERS):
+            marker_idx = i
+            break
+    if marker_idx is None:
+        return None
+    options = []
+    for ln in lines[marker_idx + 1:]:
+        mo = OPTION_RE.match(ln)
+        if mo:
+            options.append(f"{mo.group(1)}. {mo.group(2).strip(_BORDER)}")
+    if not options:
+        return None
+    ctx_parts = []
+    for ln in lines[:marker_idx]:
+        t = ln.strip(_EDGE).strip()
+        if not t or _ANIM_RE.search(t):
+            continue
+        if t.lower() in ("bash command", "edit file", "create file", "write file"):
+            continue
+        ctx_parts.append(t)
+    head = ["$ " + " | ".join(ctx_parts)[:80]] if ctx_parts else []
+    return "\n".join(head + [lines[marker_idx].strip(_EDGE).strip()] + options)
+
+
+def fire_pushcut(shot, summary):
+    secret = read_kv(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
+    if not secret:
+        log(f"pushcut-no-secret shot={shot}")
+        return
+    url = f"https://api.pushcut.io/{secret}/notifications/CC_Needs_Julian"
+    text = f"[{PI_NAME}] {SHOT_MESSAGES.get(shot, 'CC waiting')}: {summary[:120]}"
+    body = json.dumps({"text": text[:200]}).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            log(f"pushcut http={r.status} shot={shot}")
+    except urllib.error.HTTPError as e:
+        log(f"pushcut http={e.code} shot={shot}")
+    except Exception as e:
+        log(f"pushcut err={type(e).__name__} shot={shot}")
+
+
+def fire(block, shot):
+    summary = block.strip().split("\n")[0][:160]
+    mode = read_mode()
+    if mode == "off":
+        log(f"fire-skipped mode=off shot={shot}")
+        return mode
+    fire_pushcut(shot, summary)
+    return mode
+
+
+def main():
+    log(f"watcher-start pi={PI_NAME} pane={PANE} initial_delay={INITIAL_DELAY_SEC} "
+        f"shot2_gap={SHOT_2_GAP_SEC} shot3_gap={SHOT_3_GAP_SEC} max_fires={MAX_FIRES} "
+        f"debounce_polls={DEBOUNCE_POLLS}")
+    no_marker_polls = 0
+    while True:
+        try:
+            pane = capture_pane()
+            block = detect_prompt(pane)
+            sig = stable_signature(block) if block is not None else None
+            state = read_state()
+            pending_hash = state["pending_hash"]
+            pending_since = state["pending_since"]
+            last_fired_hash = state["last_fired_hash"]
+            fire_count = state["fire_count"]
+            last_fire_time = state["last_fire_time"]
+            candidate_hash = state["candidate_hash"]
+            candidate_count = state["candidate_count"]
+
+            if sig is None:
+                no_marker_polls += 1
+                if no_marker_polls >= CLEAR_DEBOUNCE:
+                    if pending_hash is not None:
+                        log(f"pending-cleared hash={str(pending_hash)[:8]}")
+                    if (pending_hash is not None or last_fired_hash is not None
+                            or candidate_hash is not None):
+                        write_state({"pending_hash": None, "pending_since": None,
+                                     "last_fired_hash": None,
+                                     "fire_count": 0, "last_fire_time": None,
+                                     "candidate_hash": None,
+                                     "candidate_count": 0})
+                time.sleep(POLL_SEC)
+                continue
+
+            no_marker_polls = 0
+            h = hashlib.sha256(sig.encode()).hexdigest()
+            now = time.time()
+
+            if h == last_fired_hash:
+                interval = RETRY_SCHEDULE[fire_count - 1] \
+                    if 1 <= fire_count <= len(RETRY_SCHEDULE) else SHOT_2_GAP_SEC
+                if (fire_count < MAX_FIRES and last_fire_time is not None
+                        and (now - last_fire_time) >= interval):
+                    new_count = fire_count + 1
+                    elapsed = int(now - last_fire_time)
+                    mode = fire(block, new_count)
+                    log(f"fire mode={mode} hash={h[:8]} shot={new_count} "
+                        f"retry_after={elapsed}s")
+                    write_state({"pending_hash": None, "pending_since": None,
+                                 "last_fired_hash": h,
+                                 "fire_count": new_count,
+                                 "last_fire_time": now,
+                                 "candidate_hash": None,
+                                 "candidate_count": 0})
+            elif h == pending_hash:
+                if pending_since is not None and (now - pending_since) >= INITIAL_DELAY_SEC:
+                    waited = int(now - pending_since)
+                    mode = fire(block, 1)
+                    log(f"fire mode={mode} hash={h[:8]} shot=1 waited={waited}s")
+                    write_state({"pending_hash": None, "pending_since": None,
+                                 "last_fired_hash": h,
+                                 "fire_count": 1,
+                                 "last_fire_time": now,
+                                 "candidate_hash": None,
+                                 "candidate_count": 0})
+            elif h == candidate_hash:
+                new_count = candidate_count + 1
+                if new_count >= DEBOUNCE_POLLS:
+                    log(f"pending-new hash={h[:8]}")
+                    write_state({"pending_hash": h, "pending_since": now,
+                                 "last_fired_hash": None,
+                                 "fire_count": 0,
+                                 "last_fire_time": None,
+                                 "candidate_hash": None,
+                                 "candidate_count": 0})
+                else:
+                    write_state({"pending_hash": pending_hash,
+                                 "pending_since": pending_since,
+                                 "last_fired_hash": last_fired_hash,
+                                 "fire_count": fire_count,
+                                 "last_fire_time": last_fire_time,
+                                 "candidate_hash": h,
+                                 "candidate_count": new_count})
+            else:
+                write_state({"pending_hash": pending_hash,
+                             "pending_since": pending_since,
+                             "last_fired_hash": last_fired_hash,
+                             "fire_count": fire_count,
+                             "last_fire_time": last_fire_time,
+                             "candidate_hash": h,
+                             "candidate_count": 1})
+
+            time.sleep(POLL_SEC)
+        except Exception as e:
+            log(f"loop-err err={type(e).__name__}")
+            time.sleep(POLL_SEC)
+
+
+if __name__ == "__main__":
+    main()
