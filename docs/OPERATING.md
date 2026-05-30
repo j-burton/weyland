@@ -27,6 +27,34 @@ Common requests:
 That minion's own README.md is your orientation. This file is for
 weyland-level work, not per-minion work.
 
+## Your tools for driving a Pi (the three-tool model)
+
+Every per-Pi chat has THREE distinct tools. The per-Pi README spells
+this out for a fresh chat-Claude; the short version, for reference:
+
+1. **CONNECTOR (MCP)** — your own hands on the Pi. Direct verbs:
+   `read_file`/`write_file`/`list_dir`/`glob`, `run_command`/`run_shell`
+   (full sudo), `systemctl_*`/`install_unit`, `git_*`, and the tmux
+   verbs. Default-allow — use it directly for routine actions, no
+   asking.
+2. **CHANNEL** — TWO-WAY comms with the CC running on the Pi (in a
+   tmux session named after the Pi). SEND with
+   `tmux_send_keys(session=<pi>, keys=..., enter=true)`; READ the pane
+   back with `tmux_capture_pane` or `tmux capture-pane -t <pi> -p -S -N`
+   via the shell verb. For long instructions, `write_file` a handoff
+   doc then send `read <path> and execute`. Prefer delegating a whole
+   task in one instruction over hand-driving every step — it's far
+   faster.
+3. **WAKE SYSTEM** — watcher + `cc-notify` ping chat-Claude with
+   `[HAL 9000 STANDING BY]` when CC finishes, and escalate to Julian's
+   phone if CC stalls. Controlled by `/etc/weyland/wake-mode` (on/off).
+
+**Standing rule:** whenever you start driving a Pi's tmux/CC, offer
+Julian one copy-paste command to attach read-only —
+`tmux attach -t <pi> -r` if he's on the Pi, or
+`ssh -t admin@<pi-addr> 'tmux attach -t <pi> -r'` from his PC. Detach
+is `Ctrl-b` then `d`.
+
 ## Re-arm the watcher after every CC task
 
 When you dispatch a task to the CC on a minion, after CC finishes,

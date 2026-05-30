@@ -98,42 +98,79 @@ that's a flag that you should verify before stating it as fact. Especially
 for facts about this Pi's state, the contents of files, or what systemd
 units exist.
 
-## How to drive this Pi
+## Your tools for driving this Pi
 
-You have an MCP connector to this Pi (the weyland connector — see the
-parent weyland repo for source). The connector verbs let you read/write
-files, run shell commands, drive the tmux session where CC lives, and
-interact with systemd. The connector is default-allow — it does not
-prompt you for permission on every action. Use it.
+You have THREE distinct tools. Know which is which — they do different
+jobs and you will use all three in a normal session.
 
-The CC running on the Pi lives in a tmux session named after the Pi
-(e.g. tmux session `coffee` on the Pi named "coffee"). To drive CC,
-send keystrokes into that pane via `tmux_send_keys`. To see CC's state,
-capture the pane via `tmux_capture_pane`.
+### 1. CONNECTOR (the MCP) — your own hands on the Pi
 
-## The wake system
+The weyland MCP connector gives you direct verbs to act on this Pi
+yourself, right now, without going through anyone:
 
-Each minion runs its own watcher. When CC on the Pi stalls at a
-permission prompt, the watcher fires escalating Pushcut notifications
-to Julian's phone:
+- **Files:** `read_file`, `write_file`, `list_dir`, `glob`
+- **Shell:** `run_command`, `run_shell` (full sudo on minions)
+- **systemd:** `systemctl_status`, `systemctl_restart`, `install_unit`
+- **git:** `git_status`, `git_log`, `git_pull`, `git_commit_push`
+- **tmux:** `tmux_list`, `tmux_send_keys`, `tmux_capture_pane`
 
-- Shot 1 (10s after prompt appears): "CC waiting"
-- Shot 2 (5 min later): "Still waiting"
-- Shot 3 (15 min total): "May be stuck"
+It is **default-allow with full sudo** — it does NOT prompt you per
+action. For routine work (reading a file, restarting a unit, checking
+a log) just do it with the connector directly. Don't ask Julian for
+permission to do the technical work he opened the chat for.
 
-After shot 3 the cycle locks until the prompt clears.
+### 2. CHANNEL — TWO-WAY comms with this Pi's CC
 
-The wake mode flag at `/etc/weyland/wake-mode` controls whether the
-automated wake fires. `on` (default) = wake fires. `off` = silent.
-You can flip it via the connector. Default ON when uncertain — the
-cost of a stray ping is much lower than the cost of CC sitting
-unnoticed.
+There is a Claude Code (CC) instance running ON this Pi, in a tmux
+session named after the Pi (session `coffee` on the Pi "coffee"). The
+channel to it is **two-way**. Do NOT assume you are blind after you
+send — you can read CC back. Always:
 
-**After every CC task that you dispatched, re-arm the wake system in
-the same turn.** Flip the mode off then on. This is mechanical, not
-discretionary — every task complete → re-arm. The cost of an extra
-cycle is zero; the cost of a missed re-arm is silence when something
-goes wrong.
+- **SEND** an instruction:
+  `tmux_send_keys(session=<pi>, keys="...", enter=true)`
+- **READ the pane back** — either the `tmux_capture_pane` verb, or run
+  `tmux capture-pane -t <pi> -p -S -N` (last N lines) via the shell
+  verb. Check what CC actually did; don't fire and forget.
+- **Long instructions → relay pattern:** don't type a wall of text
+  into the pane. `write_file` a handoff doc, then send CC
+  `read <path> and execute`.
+
+**Prefer delegating a whole task to CC in one instruction** over
+hand-driving every step from your side. CC is local, has its own tools,
+and is much faster at multi-step work than you poking the pane key by
+key. Hand me one task; let me run it; read back the result.
+
+### 3. WAKE SYSTEM — gets attention when CC needs it
+
+A watcher + `cc-notify` sit alongside CC. When CC finishes a task it
+pings **you** (chat-Claude) with `[HAL 9000 STANDING BY]` so you know
+to come read the result. If CC stalls (e.g. at a permission prompt) the
+watcher escalates to Julian's phone via Pushcut:
+
+- Shot 1 (10s): "CC waiting" · Shot 2 (5 min): "Still waiting" ·
+  Shot 3 (15 min): "May be stuck". After shot 3 it locks until clear.
+
+Controlled by `/etc/weyland/wake-mode`: `on` (default) = fires, `off`
+= silent. Flip it via the connector. Default ON when uncertain — a
+stray ping costs far less than CC sitting unnoticed.
+
+**Drill — re-arm after every dispatch.** After you hand CC a task,
+re-arm the wake in the SAME turn: flip mode `off` then `on`. Mechanical,
+not discretionary. The cost of an extra cycle is zero; the cost of a
+missed re-arm is silence when something breaks.
+
+### Standing rule: offer Julian a read-only window
+
+Whenever you START driving this Pi's tmux/CC, proactively give Julian a
+single copy-paste command to watch over your shoulder, read-only. Pick
+the right one:
+
+- **Already on the Pi:** `tmux attach -t <pi> -r`
+- **From his PC:** `ssh -t admin@<pi-addr> 'tmux attach -t <pi> -r'`
+
+The `-r` makes it read-only so he can't fat-finger the session. To
+detach he presses `Ctrl-b` then `d`. Offer it once, unprompted, as one
+clean block — he likes to see CC working.
 
 ## Escalation
 
