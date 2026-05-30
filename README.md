@@ -1,6 +1,10 @@
 # weyland
 
-Bootstrap and remote-control layer for Julian's Raspberry Pi fleet.
+In Norse and Anglo-Saxon legend, Wayland was the master smith — an
+exiled craftsman who forged enchanted weapons and armour for kings
+and gods. This Wayland forges Claude-driven Raspberry Pi minions
+instead.
+
 Each Pi ("minion") is set up by one curl command, after which it
 lives in its own GitHub repo and is reachable from any Claude surface
 (web, desktop, mobile) via a custom connector.
