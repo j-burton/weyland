@@ -67,7 +67,7 @@ PHASES=(
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-log()  { echo -e "\n\033[1;36m[weyland]\033[0m $*"; }
+log()  { echo -e "\n\033[1;36m[weyland]\033[0m $*" >&2; }
 warn() { echo -e "\n\033[1;33m[weyland warn]\033[0m $*" >&2; }
 die()  { echo -e "\n\033[1;31m[weyland fail]\033[0m $*" >&2; exit 1; }
 
@@ -405,7 +405,7 @@ phase_per_pi_repo() {
     gh repo clone "$repo_slug" "$local_dir"
   else
     log "${local_dir} already cloned; pulling latest"
-    git -C "$local_dir" pull --ff-only || warn "pull failed (maybe empty repo); continuing"
+    git -C "$local_dir" pull --ff-only 2>/dev/null || true
   fi
 
   # Seed from weyland templates if the per-Pi repo is empty.
