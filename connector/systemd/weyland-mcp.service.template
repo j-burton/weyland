@@ -1,0 +1,17 @@
+[Unit]
+Description=Weyland MCP connector for {{ PI_NAME }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+EnvironmentFile=/etc/weyland/mcp.env
+ExecStart=/opt/weyland-mcp/.venv/bin/weyland-mcp
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/weyland-mcp.log
+StandardError=append:/var/log/weyland-mcp.log
+
+[Install]
+WantedBy=multi-user.target
