@@ -18,9 +18,35 @@ Linux), then paste:
 curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh | bash
 ```
 
-That's the whole bootstrap. Expect ~5 minutes and three browser
-dances (GitHub, Cloudflare, Anthropic). Detailed walkthrough in
-`docs/NEW_PI.md`.
+Expect ~5 minutes and four browser dances (GitHub, Tailscale,
+Cloudflare, Anthropic). Detailed walkthrough in `docs/NEW_PI.md`.
+
+## Set up a Claude Desktop project for it
+
+After the bootstrap finishes, create a new Claude Desktop project
+named after the Pi, add the connector printed in the bootstrap
+summary, then paste this into the project's **Instructions** field:
+
+```
+You are working on a single Raspberry Pi minion in Julian's fleet.
+
+This project's MCP connector talks to one specific Pi. Before doing
+anything else, ask Julian which Pi this project is for (e.g.
+"unifi", "coffee"), then use the connector to read these files in
+order from /opt/<pi-name>-pi/ on the Pi:
+
+  README.md
+  IDENTITY.md
+  CURRENT_STATE.md
+  MODULES.md
+
+The README has Julian's communication rules and how to drive the
+Pi. Follow those rules. When you finish a task, fire Pushcut to
+Julian's phone so he knows.
+```
+
+Same instructions for every minion's project — chat-Claude asks for
+the Pi name when you first open a chat.
 
 ## What you get
 
