@@ -15,7 +15,7 @@ Claude."
 Paste this into the Pi's SSH session:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh)
 ```
 
 ## What happens next

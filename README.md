@@ -15,7 +15,7 @@ SSH into a fresh Pi running Raspberry Pi OS (or any Debian-family
 Linux), then paste:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh | bash
+bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh)
 ```
 
 Expect ~5 minutes and four browser dances (GitHub, Tailscale,
