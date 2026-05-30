@@ -162,6 +162,10 @@ The exceptions (denied by the connector regardless): `/etc/shadow`,
 `~/.ssh/`, `/root/`, and the per-Pi repo's `.git/config` (contains a
 GitHub token). Everything else is fair game.
 
+Authentication is via OAuth 2.1. Claude Desktop pastes a bearer token
+ONCE on first connect; after that, Claude Desktop's own token survives
+MCP server restarts (persisted at `/var/lib/weyland-mcp/tokens.json`).
+
 ## The weyland repo
 
 This Pi was bootstrapped by the weyland project. If you find a bug in

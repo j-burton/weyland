@@ -654,6 +654,9 @@ phase_connector() {
 
   # Step 3: generate a bearer token (one per Pi, randomly).
   sudo mkdir -p "$env_dir"
+  # Token-store dir for OAuth-issued access tokens (mode 0700, owned by the
+  # service user so the connector can write atomically without sudo).
+  sudo install -d -m 0700 -o "$USER" -g "$USER" /var/lib/weyland-mcp
   if [ ! -f "$env_file" ] || ! grep -q "^WEYLAND_BEARER_TOKEN_HASH=" "$env_file" 2>/dev/null; then
     local token
     token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
@@ -669,6 +672,8 @@ WEYLAND_LOG_PATH=/var/log/weyland-mcp.log
 WEYLAND_PI_NAME=${PI_NAME}
 WEYLAND_PI_REPO=${PI_REPO:-}
 WEYLAND_PI_DIR=${PI_DIR}
+WEYLAND_OAUTH_CLIENT_ID=weyland-mcp-claude-ai
+WEYLAND_TOKEN_STORE=/var/lib/weyland-mcp/tokens.json
 EOF
     sudo chmod 0640 "$env_file"
 
@@ -715,9 +720,19 @@ phase_summary() {
 
   --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
 
-    Name:    ${PI_NAME:-?}
-    URL:     https://${DOMAIN:-?}/mcp
+    Name:            ${PI_NAME:-?}
+    URL:             https://${DOMAIN:-?}/mcp
+    OAuth Client ID: weyland-mcp-claude-ai
+    Client Secret:   (leave blank — public client, PKCE)
+
+  --- ON FIRST CONNECT ---
+
+    Claude Desktop will redirect you to a consent page. Paste this
+    bearer token there ONE TIME:
+
     Bearer:  ${WEYLAND_BEARER_TOKEN:-(see /var/lib/weyland/env if you missed this)}
+
+    The bearer is hashed on disk; this is your only chance to copy it.
 
   --- THEN ---
 
