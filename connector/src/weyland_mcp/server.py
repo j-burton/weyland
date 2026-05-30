@@ -54,7 +54,13 @@ def build_server(cfg: Config) -> FastMCP:
             issuer_url=AnyHttpUrl(cfg.public_url),
             resource_server_url=AnyHttpUrl(cfg.public_url),
             required_scopes=[],
-            client_registration_options=ClientRegistrationOptions(enabled=False),
+            # DCR enabled — Claude Desktop's connector flow (as of 2026-05)
+            # requires `registration_endpoint` in the OAuth discovery doc and
+            # aborts the connect with `oauth_error=registration_endpoint_missing`
+            # otherwise. The SDK auto-mounts /register, which calls our
+            # provider's register_client() and then advertises the endpoint
+            # in the discovery doc. No expiry, no scope restrictions.
+            client_registration_options=ClientRegistrationOptions(enabled=True),
         ),
     )
 

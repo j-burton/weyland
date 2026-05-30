@@ -115,6 +115,15 @@ class WeylandOAuthProvider(OAuthAuthorizationServerProvider):
         self._pending: dict[str, _PendingConsent] = {}
         self._codes: dict[str, AuthorizationCode] = {}
         self._access_tokens: dict[str, AccessToken] = {}
+        # Dynamically-registered clients (DCR — RFC 7591). Claude Desktop's
+        # connector flow (as of 2026-05) registers a fresh client at /register
+        # before /authorize. The SDK's register handler mints the client_id
+        # (uuid4) and an optional client_secret; we just remember the result
+        # so subsequent get_client() lookups by that id find it. Not persisted
+        # for now — a connector restart forces Claude Desktop to re-register,
+        # which is mildly noisy but not broken (existing access tokens load
+        # from disk and continue to validate independently of client_id).
+        self._registered_clients: dict[str, OAuthClientInformationFull] = {}
         self._token_store_path = (
             Path(cfg.token_store_path) if cfg.token_store_path else None
         )
@@ -247,26 +256,36 @@ class WeylandOAuthProvider(OAuthAuthorizationServerProvider):
     # --- OAuthAuthorizationServerProvider interface --------------------------
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
-        if client_id != self._client_id:
-            return None
-        # Public client: no client_secret. PKCE is the substitute.
-        return OAuthClientInformationFull(
-            client_id=self._client_id,
-            client_secret=None,
-            redirect_uris=[AnyUrl(CLAUDE_REDIRECT_URI)],
-            grant_types=["authorization_code"],
-            response_types=["code"],
-            token_endpoint_auth_method="none",
-            scope=WEYLAND_SCOPE,
-            client_name="weyland-mcp (single-user)",
-        )
+        # Static, env-configured client preserves backward-compat for any
+        # Claude Desktop entries that were manually wired to the historical
+        # client_id (the value of cfg.oauth_client_id, e.g.
+        # `weyland-mcp-claude-ai`). Public client; PKCE substitutes for secret.
+        if client_id == self._client_id:
+            return OAuthClientInformationFull(
+                client_id=self._client_id,
+                client_secret=None,
+                redirect_uris=[AnyUrl(CLAUDE_REDIRECT_URI)],
+                grant_types=["authorization_code"],
+                response_types=["code"],
+                token_endpoint_auth_method="none",
+                scope=WEYLAND_SCOPE,
+                client_name="weyland-mcp (single-user)",
+            )
+        # Dynamically-registered clients — Claude Desktop's current flow.
+        return self._registered_clients.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        # Dynamic Client Registration is disabled at the SDK settings level;
-        # this method should never be reached. If it is, refuse.
-        raise NotImplementedError(
-            "Dynamic Client Registration is disabled for weyland-mcp"
-        )
+        """Accept a Dynamic Client Registration (RFC 7591).
+
+        The SDK's register handler has already minted `client_id` (a uuid4),
+        optionally minted `client_secret` based on `token_endpoint_auth_method`,
+        validated the metadata (grant_types must include authorization_code +
+        refresh_token; response_types must include 'code'), and constructed
+        the full `OAuthClientInformationFull` it'll return to the caller.
+        Our job is only to remember it so later /authorize + /token calls
+        can resolve the client_id.
+        """
+        self._registered_clients[client_info.client_id] = client_info
 
     async def authorize(
         self,
