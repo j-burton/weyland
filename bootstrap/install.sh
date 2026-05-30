@@ -17,6 +17,21 @@ OWNER="j-burton"
 DEFAULT_DOMAIN_ROOT="julianburton.com"
 STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 
+# Ordered phase list, used by the progress checklist + the main runner.
+# (name, label) pairs. Update both lists if you add or remove a phase.
+PHASES=(
+  "preflight:Pre-flight checks"
+  "identity:Identity"
+  "packages:System packages"
+  "tailscale:Tailscale"
+  "github_auth:GitHub auth"
+  "per_pi_repo:Per-Pi repo"
+  "tunnel:Cloudflare tunnel"
+  "claude_code:Claude Code + wake"
+  "connector:Weyland MCP connector"
+  "summary:Summary"
+)
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -42,6 +57,48 @@ load_state() {
     # shellcheck disable=SC1091
     . "$STATE_DIR/env"
   fi
+}
+
+# Render a checklist of all phases, marking each based on $1 (the
+# "current" phase name) and $2 ("running" or "done").
+# We track completed phases via a simple file in $STATE_DIR.
+render_checklist() {
+  local current="$1" current_state="$2"
+  local done_file="$STATE_DIR/run-progress"
+  sudo mkdir -p "$STATE_DIR" 2>/dev/null || true
+  sudo touch "$done_file" 2>/dev/null || true
+
+  # Mark $current done if state=done.
+  if [ "$current_state" = "done" ]; then
+    echo "$current" | sudo tee -a "$done_file" >/dev/null 2>&1 || true
+  fi
+
+  # Read completed set.
+  local completed=""
+  if [ -r "$done_file" ]; then
+    completed="$(cat "$done_file" 2>/dev/null || true)"
+  fi
+
+  # Render.
+  echo ""
+  echo "────────────────────────────────────────"
+  echo " weyland bootstrap"
+  echo "────────────────────────────────────────"
+  local entry name label marker
+  for entry in "${PHASES[@]}"; do
+    name="${entry%%:*}"
+    label="${entry#*:}"
+    if echo "$completed" | grep -qx "$name"; then
+      marker="  ✓"
+    elif [ "$name" = "$current" ] && [ "$current_state" = "running" ]; then
+      marker="  ▶"
+    else
+      marker="   "
+    fi
+    printf " %s %s\n" "$marker" "$label"
+  done
+  echo "────────────────────────────────────────"
+  echo ""
 }
 
 # ----------------------------------------------------------------------
@@ -181,6 +238,51 @@ phase_packages() {
   fi
 
   log "packages installed"
+}
+
+# ----------------------------------------------------------------------
+# Phase 2.5 — Tailscale
+# ----------------------------------------------------------------------
+phase_tailscale() {
+  log "Phase 2.5: Tailscale"
+
+  # Install Tailscale from the official repo if absent.
+  if ! command -v tailscale >/dev/null 2>&1; then
+    log "installing tailscale"
+    curl -fsSL https://tailscale.com/install.sh | sudo sh \
+      || die "tailscale install failed"
+  else
+    log "tailscale already installed"
+  fi
+
+  # Join the tailnet. Skip if already authed.
+  local status
+  status="$(sudo tailscale status --json 2>/dev/null | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); print(d.get("BackendState",""))' \
+    2>/dev/null || true)"
+  if [ "$status" = "Running" ]; then
+    log "tailscale already up"
+  else
+    cat <<EOF
+
+  Tailscale needs to join your tailnet so this Pi is reachable
+  remotely. A URL will appear below; open it in any browser logged
+  into your Tailscale account and approve.
+
+EOF
+    sudo tailscale up --ssh \
+      || die "tailscale up failed"
+  fi
+
+  # Record the tailnet hostname for the summary.
+  local ts_host
+  ts_host="$(sudo tailscale status --json 2>/dev/null | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); print(d.get("Self",{}).get("HostName",""))' \
+    2>/dev/null || true)"
+  if [ -n "$ts_host" ]; then
+    save_state TAILSCALE_HOST "$ts_host"
+    log "tailscale up; ssh as: ssh admin@${ts_host}"
+  fi
 }
 
 # ----------------------------------------------------------------------
@@ -569,6 +671,7 @@ phase_summary() {
   Domain:     ${DOMAIN:-?}
   MCP URL:    https://${DOMAIN:-?}/mcp
   Repo:       https://github.com/${OWNER}/${PI_NAME:-?}-pi
+  SSH:        ssh admin@${TAILSCALE_HOST:-${PI_NAME:-?}}   (over Tailscale, from anywhere)
 
   --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
 
@@ -589,16 +692,29 @@ EOF
 # Main
 # ----------------------------------------------------------------------
 main() {
+  sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
   load_state
+  render_checklist preflight running
   phase_preflight
+  render_checklist preflight done; render_checklist identity running
   phase_identity
+  render_checklist identity done; render_checklist packages running
   phase_packages
+  render_checklist packages done; render_checklist tailscale running
+  phase_tailscale
+  render_checklist tailscale done; render_checklist github_auth running
   phase_github_auth
+  render_checklist github_auth done; render_checklist per_pi_repo running
   phase_per_pi_repo
+  render_checklist per_pi_repo done; render_checklist tunnel running
   phase_tunnel
+  render_checklist tunnel done; render_checklist claude_code running
   phase_claude_code
+  render_checklist claude_code done; render_checklist connector running
   phase_connector
+  render_checklist connector done; render_checklist summary running
   phase_summary
+  render_checklist summary done
 }
 
 main "$@"
