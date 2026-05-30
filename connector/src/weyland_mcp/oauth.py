@@ -46,6 +46,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from mcp.server.auth.provider import (
     AccessToken,
@@ -58,6 +59,18 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyUrl
 
 from .config import Config
+
+
+def _origin(public_url: str) -> str:
+    """Return scheme://host[:port] with no path.
+
+    `cfg.public_url` may include a path component (e.g. `.../mcp` — the MCP
+    protocol's own endpoint). The consent route is mounted at the root of
+    the host, not under `/mcp`, so we need the bare origin when building
+    consent URLs.
+    """
+    parsed = urlparse(public_url)
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 # Static labels for the single-user setup (not secrets — just identifiers).
 WEYLAND_CLIENT_ID_DEFAULT = "weyland-mcp-claude-ai"
@@ -96,7 +109,9 @@ class WeylandOAuthProvider(OAuthAuthorizationServerProvider):
     def __init__(self, cfg: Config) -> None:
         self._client_id = cfg.oauth_client_id
         self._bearer_hash = cfg.bearer_token_hash.lower()
-        self._public_url = cfg.public_url.rstrip("/")
+        # consent URL is built off the origin only — see _origin() above.
+        # `cfg.public_url` may include `/mcp`; the consent route lives at root.
+        self._public_url = _origin(cfg.public_url)
         self._pending: dict[str, _PendingConsent] = {}
         self._codes: dict[str, AuthorizationCode] = {}
         self._access_tokens: dict[str, AccessToken] = {}
@@ -217,7 +232,9 @@ class WeylandOAuthProvider(OAuthAuthorizationServerProvider):
         code_str = secrets.token_urlsafe(32)
         self._codes[code_str] = AuthorizationCode(
             code=code_str,
-            scopes=params.scopes,
+            # `params.scopes` is None when Claude Desktop requests no scopes
+            # (common). Pydantic rejects None; default to [] for the same effect.
+            scopes=params.scopes or [],
             expires_at=time.time() + CODE_TTL_S,
             client_id=client_id,
             code_challenge=params.code_challenge,
