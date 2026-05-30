@@ -223,16 +223,24 @@ phase_packages() {
     log "gh already installed"
   fi
 
-  # cloudflared — official Cloudflare apt repo.
+  # cloudflared — install from official .deb download, not apt repo
+  # (the apt repo doesn't have releases for every Debian codename;
+  # the .deb is built per-architecture and tracks latest).
   if ! command -v cloudflared >/dev/null 2>&1; then
     log "installing cloudflared"
-    local cf_keyring="/usr/share/keyrings/cloudflare-main.gpg"
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
-      | sudo tee "$cf_keyring" >/dev/null
-    echo "deb [signed-by=${cf_keyring}] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
-      | sudo tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq cloudflared
+    local arch deb_url tmp_deb
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+      amd64|arm64|armhf|386) ;;
+      *) die "cloudflared: unsupported arch $arch" ;;
+    esac
+    deb_url="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}.deb"
+    tmp_deb="$(mktemp --suffix=.deb)"
+    curl -fsSL "$deb_url" -o "$tmp_deb" \
+      || die "cloudflared: download failed from $deb_url"
+    sudo dpkg -i "$tmp_deb" \
+      || die "cloudflared: dpkg install failed"
+    rm -f "$tmp_deb"
   else
     log "cloudflared already installed"
   fi
