@@ -4,7 +4,9 @@ from __future__ import annotations
 import shlex
 import subprocess
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+
+from ..config import Config
 
 
 def _tmux(*args: str) -> subprocess.CompletedProcess:
@@ -16,7 +18,7 @@ def _tmux(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def register(app: FastMCP) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
     @app.tool()
     def tmux_send_keys(session: str, keys: str, enter: bool = True,
                        window: int = 0, pane: int = 0) -> dict:

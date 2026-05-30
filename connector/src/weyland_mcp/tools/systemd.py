@@ -4,14 +4,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+
+from ..config import Config
 
 
 def _run(*argv: str) -> subprocess.CompletedProcess:
     return subprocess.run(list(argv), capture_output=True, text=True, check=False)
 
 
-def register(app: FastMCP) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
     @app.tool()
     def systemctl_status(unit: str) -> dict:
         """Return `systemctl status <unit>` output."""

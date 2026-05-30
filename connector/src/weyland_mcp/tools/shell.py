@@ -4,7 +4,9 @@ from __future__ import annotations
 import shlex
 import subprocess
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+
+from ..config import Config
 
 STDOUT_CAP = 64 * 1024  # 64 KiB
 TIMEOUT_DEFAULT = 60
@@ -16,7 +18,7 @@ def _truncate(s: str, cap: int) -> tuple[str, bool]:
     return s[:cap], True
 
 
-def register(app: FastMCP) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
     @app.tool()
     def run_command(cmd: str, args: list[str] | None = None,
                     timeout: int = TIMEOUT_DEFAULT) -> dict:

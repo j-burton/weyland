@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import subprocess
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+
+from ..config import Config
 
 
 def _git(repo: str, *args: str) -> subprocess.CompletedProcess:
@@ -15,7 +17,8 @@ def _git(repo: str, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-def register(app: FastMCP, repo_path: str) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
+    repo_path = cfg.pi_dir
     @app.tool()
     def git_status() -> dict:
         """git status of the per-Pi repo."""

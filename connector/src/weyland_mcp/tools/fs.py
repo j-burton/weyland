@@ -5,14 +5,15 @@ import glob as _glob
 import os
 from pathlib import Path
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
+from ..config import Config
 from ..denylist import is_denied
 
 MAX_BYTES = 1 * 1024 * 1024  # 1 MiB
 
 
-def register(app: FastMCP) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
     @app.tool()
     def read_file(path: str) -> dict:
         """Read a UTF-8 text file. Refuses denied paths. Caps at 1 MiB."""

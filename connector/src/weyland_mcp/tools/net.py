@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import httpx
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+
+from ..config import Config
 
 DEFAULT_TIMEOUT = 15.0
 
 
-def register(app: FastMCP) -> None:
+def register(app: FastMCP, cfg: Config) -> None:
     @app.tool()
     def http_get(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
         """GET a URL. Returns body (text) or error."""

@@ -1,12 +1,17 @@
-"""FastMCP server entry. Wires all the tool modules together."""
+"""FastMCP server entry. Wires all the tool modules together.
+
+Uses the official Anthropic MCP Python SDK (`mcp.server.fastmcp.FastMCP`).
+Bearer-token auth is still the active auth path; OAuth layers on top in
+a later handoff.
+"""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
-from .config import load_config
+from .config import Config, load_config
 from .tools import fs as fs_tools
 from .tools import github as github_tools
 from .tools import net as net_tools
@@ -15,9 +20,8 @@ from .tools import systemd as systemd_tools
 from .tools import tmux as tmux_tools
 
 
-def build_app() -> FastMCP:
-    cfg = load_config()
-
+def build_server(cfg: Config) -> FastMCP:
+    """Construct the FastMCP app, wire whoami + the six tool modules, return it."""
     log_path = Path(cfg.log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
@@ -26,7 +30,18 @@ def build_app() -> FastMCP:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    app = FastMCP(name=f"weyland-mcp/{cfg.pi_name}")
+    app = FastMCP(
+        name=f"weyland-mcp/{cfg.pi_name}",
+        instructions=(
+            "Weyland MCP connector for one minion Pi. Default-allow surface "
+            "(no per-call approval); tiny credential-file denylist; full sudo "
+            "available via the shell + systemd verbs."
+        ),
+        host=cfg.bind_host,
+        port=cfg.bind_port,
+        streamable_http_path="/mcp",
+        log_level="INFO",
+    )
 
     # Identity / discovery verb.
     @app.tool()
@@ -40,21 +55,16 @@ def build_app() -> FastMCP:
             "version": "0.0.1",
         }
 
-    fs_tools.register(app)
-    shell_tools.register(app)
-    tmux_tools.register(app)
-    systemd_tools.register(app)
-    net_tools.register(app)
-    github_tools.register(app, repo_path=cfg.pi_dir)
+    fs_tools.register(app, cfg)
+    shell_tools.register(app, cfg)
+    tmux_tools.register(app, cfg)
+    systemd_tools.register(app, cfg)
+    net_tools.register(app, cfg)
+    github_tools.register(app, cfg)
 
     return app
 
 
-def run() -> None:
-    cfg = load_config()
-    app = build_app()
-    app.run(
-        transport="streamable-http",
-        host=cfg.bind_host,
-        port=cfg.bind_port,
-    )
+def run(app: FastMCP) -> None:
+    """Run the FastMCP app over streamable-http. Host/port set on the constructor."""
+    app.run(transport="streamable-http")
