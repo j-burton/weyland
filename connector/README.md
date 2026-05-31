@@ -10,13 +10,17 @@ remote control over the Pi.
 - **Full sudo via passwordless sudo for the service user.**
 - **Small denylist** for credential files (`/etc/shadow`, `~/.ssh/`,
   the per-Pi repo's `.git/config`). Everything else is open.
-- **One bearer token** per Pi. The token's hash is the only auth
-  check.
+- **OAuth 2.1** (public client + PKCE, with dynamic client registration).
+  On first connect Claude Desktop is redirected to the Pi's
+  `/weyland-consent` form, where the per-Pi bearer token is pasted once; the
+  connector checks its sha256 against `WEYLAND_BEARER_TOKEN_HASH`. The granted
+  client token is persisted at `WEYLAND_TOKEN_STORE` so it survives restarts.
 
 ## Verbs
 
 | Group | Verb | Purpose |
 |---|---|---|
+| identity | `whoami` | This Pi's name/repo/dir/public URL + connector version. |
 | fs | `read_file` | Read a text file. Caps at 1 MiB. |
 | fs | `write_file` | Write a text file. Caps at 1 MiB. |
 | fs | `list_dir` | List directory entries. |
@@ -35,6 +39,7 @@ remote control over the Pi.
 | github | `git_log` | Recent commits. |
 | github | `git_pull` | Fast-forward pull. |
 | github | `git_commit_push` | Stage, commit, push. |
+| wake | `restart_wake` | Re-arm the tmux watcher between tasks (flips `wake-mode` off→on); reports `watcher_alive` + `watcher_pid`. |
 
 ## Config (env vars)
 
@@ -48,6 +53,8 @@ remote control over the Pi.
 | `WEYLAND_PI_NAME` | this Pi's name |
 | `WEYLAND_PI_REPO` | e.g. `j-burton/coffee-pi` |
 | `WEYLAND_PI_DIR` | local path of the per-Pi repo clone |
+| `WEYLAND_OAUTH_CLIENT_ID` | OAuth client id (default `weyland-mcp-claude-ai`) |
+| `WEYLAND_TOKEN_STORE` | persisted client tokens (default `/var/lib/weyland-mcp/tokens.json`) |
 
 ## Running
 

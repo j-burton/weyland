@@ -41,9 +41,13 @@ Each Pi runs:
 - **A Cloudflare tunnel** — exposes the local MCP service at
   `https://<pi-name>.julianburton.com/mcp` so chat-Claude (running in
   Anthropic's cloud) can reach it.
-- **The wake system** — `cc-notify` hook + `cc-tmux-watcher` daemon
-  that fires Pushcut notifications to Julian's phone when CC stalls
-  or finishes a task.
+- **The wake system** — `cc-notify` hook + `cc-tmux-watcher` daemon.
+  They wake chat-Claude by popping the Claude window on Julian's PC (over
+  Tailscale) when CC finishes or stalls, escalating to a Pushcut on his
+  phone only as a last resort. See "Wake model" below.
+- **The vault** — fleet-wide secrets (the Pushcut webhook, etc.) are fetched
+  at bootstrap from the private `j-burton/weyland-secrets` repo via the PAT,
+  so no secret lives in the public weyland repo.
 
 Julian adds one custom connector entry to Claude Desktop per Pi.
 Anthropic's account-sync makes the connector available on all his
@@ -70,16 +74,23 @@ names ("coffee", "unifi", etc.) so when he SSHs in he can see he's
 in the right session. Minor cost (the connector reads `WEYLAND_PI_NAME`
 and uses it as the default), real value.
 
-## Why Pushcut-only wake (no PC/AHK)
+## Wake model — PC first, Pushcut last (over Tailscale)
 
-Atlas's wake system pings Julian's PC, which types a HAL message into
-his Claude Desktop chat input. That works for Atlas because it's one
-Pi he's actively collaborating with at his desk.
+An earlier plan had minions skip the PC entirely and Pushcut Julian on
+every wake, on the assumption that a distributed minion couldn't reach his
+PC. Tailscale removes that constraint: the PC is reachable from any minion
+by its Tailscale (MagicDNS) hostname, wherever either of them is. So the
+wake system mirrors Atlas's PC channel, with phone paging as the backstop:
 
-For a fleet of distributed Pis (some at his house, some at his
-mother's, some travelling with him), the PC path doesn't generalise.
-The minion sitting in his mother's house can't reach his PC over the
-tailnet.
+- `cc-notify` fires a **PC-only** ping (`[HAL 9000 STANDING BY]`) when CC
+  goes idle at turn-end. It never Pushcuts Julian — chat-Claude reads the
+  pane and decides whether he needs paging.
+- `cc-tmux-watcher` runs a **5-shot escalation ladder** when CC sits idle
+  (gaps 10s → 60s → 60s → 480s → 600s). Shots 1–4 are PC-only (they wake
+  chat-Claude); only the final shot also Pushcuts Julian's phone — by then
+  chat-Claude is unreachable and a human must step in.
 
-So minions skip the PC entirely. Every wake fires Pushcut directly to
-his phone. Simpler, universal, no tailnet dependency.
+The PC end is a small AutoHotkey listener (`docs/cc-wake-v2-FRESH.ahk`) on
+port 7777, gated by a shared `X-Wake-Token`. The minion's PC hostname and
+token are set during the bootstrap identity phase; leave them blank to fall
+back to Pushcut-only.
