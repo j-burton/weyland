@@ -121,6 +121,133 @@ fetch_weyland_pat_from_gist() {
     | head -n1
 }
 
+# ----------------------------------------------------------------------
+# Live-dashboard state (/var/lib/weyland/state.json)
+# ----------------------------------------------------------------------
+# The bash side is the SINGLE writer; dashboard.py only reads it (+ /save-pat).
+# All mutations go through one python3 helper that loads, patches, and writes
+# atomically (tmp + os.replace). jq may be absent; python3 is a hard dep.
+#
+# Cosmetic by design: every wrapper is best-effort (|| true) and a no-op when
+# state.json doesn't exist (i.e. dashboard never started — plain/terminal mode),
+# so the wizard can never break the bootstrap.
+STATE_FILE="${STATE_DIR}/state.json"
+
+_state_op() {
+  STATE_FILE="$STATE_FILE" python3 - "$@" <<'PY' 2>/dev/null || true
+import json, os, sys, tempfile
+sf = os.environ["STATE_FILE"]; op = sys.argv[1]; a = sys.argv[2:]
+if op != "init" and not os.path.exists(sf):
+    sys.exit(0)  # dashboard not active -> no-op
+PHASES = [
+    ("preflight","The forge is inspected"), ("identity","The minion receives its name"),
+    ("packages","Tools of war are gathered"), ("tailscale","The minion enters the realm"),
+    ("github_auth","GitHub demands tribute"), ("per_pi_repo","The chronicles are opened"),
+    ("tunnel","The passage through the void is opened"), ("claude_code","The intelligence is summoned"),
+    ("connector","The connector is forged"), ("vault","The ancient secrets are retrieved"),
+    ("selfdoc","The minion speaks its name"), ("summary","The induction is sealed"),
+]
+try:
+    with open(sf) as f: s = json.load(f)
+except Exception:
+    s = {}
+if op == "init":
+    pi, dom, ip = (a + ["", "", ""])[:3]
+    s = {"pi_name": pi, "domain": dom, "local_ip": ip,
+         "phases": [{"name": n, "label": l, "status": "pending"} for n, l in PHASES],
+         "action": {"active": False},
+         "result": {"ready": False, "bearer": "", "mcp_url": "", "consent_tunnel": "",
+                    "consent_local": "", "client_id": "weyland-mcp-claude-ai",
+                    "repo": "", "project_instructions": ""}}
+elif op == "meta":
+    pi, dom = (a + ["", ""])[:2]
+    if pi: s["pi_name"] = pi
+    if dom: s["domain"] = dom
+elif op == "phase":
+    for p in s.get("phases", []):
+        if p.get("name") == a[0]: p["status"] = a[1]
+elif op == "action":
+    s["action"] = {"provider": a[0],
+                   "url": a[1] if len(a) > 1 else "",
+                   "code": a[2] if len(a) > 2 else "",
+                   "active": True}
+elif op == "action_clear":
+    s.setdefault("action", {})["active"] = False
+elif op == "result_set":
+    s.setdefault("result", {})[a[0]] = a[1] if len(a) > 1 else ""
+elif op == "ready":
+    s.setdefault("result", {})["ready"] = True
+d = os.path.dirname(sf) or "."
+fd, tmp = tempfile.mkstemp(dir=d)
+with os.fdopen(fd, "w") as f: json.dump(s, f)
+os.replace(tmp, sf)
+PY
+}
+state_init()         { _state_op init "${1:-}" "${2:-}" "${3:-}"; }
+state_meta()         { _state_op meta "${1:-}" "${2:-}"; }
+state_phase()        { _state_op phase "$1" "$2"; }
+state_action()       { _state_op action "$1" "${2:-}" "${3:-}"; }   # provider url [code]
+state_action_clear() { _state_op action_clear; }
+state_result_set()   { _state_op result_set "$1" "${2:-}"; }
+state_ready()        { _state_op ready; }
+
+# ----------------------------------------------------------------------
+# run_dance — wrap an interactive auth command for the live dashboard
+# ----------------------------------------------------------------------
+# Usage: run_dance <phase> <provider> <url_regex> -- <cmd...>
+# Marks the phase running + raises the provider's auth card immediately, runs
+# the command under a pty (so CLIs that gate their URL on a tty still print it),
+# tees output to $STATE_DIR/<phase>.log, and a background watcher publishes the
+# auth URL (+ device code) to the action as soon as they appear. On success it
+# clears the card and marks the phase done; on failure marks it error. Returns
+# the command's exit code so the caller can `|| die` as before.
+run_dance() {
+  local phase="$1" provider="$2" url_re="$3"; shift 3
+  [ "${1:-}" = "--" ] && shift
+  local cmd="$*"
+  local logf="${STATE_DIR}/${phase}.log"
+  : > "$logf" 2>/dev/null || true
+
+  state_phase "$phase" running
+  state_action "$provider"     # card appears now (provider ritual copy lives in the dashboard JS)
+
+  # Watcher: surface the URL + code the moment they appear (up to ~30 min).
+  (
+    n=0
+    while [ "$n" -lt 1800 ]; do
+      if [ -s "$logf" ]; then
+        u="$(grep -oE "$url_re" "$logf" 2>/dev/null | head -n1 || true)"
+        if [ -n "$u" ]; then
+          c="$(grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' "$logf" 2>/dev/null | head -n1 || true)"
+          state_action "$provider" "$u" "$c"
+          break
+        fi
+      fi
+      sleep 1; n=$((n + 1))
+    done
+  ) &
+  local watcher=$!
+
+  local rc=0
+  if command -v script >/dev/null 2>&1; then
+    # util-linux script: pty-backed, records to logf, -e returns child's status.
+    script -qec "$cmd" "$logf" || rc=$?
+  else
+    bash -c "$cmd" 2>&1 | tee "$logf" || true
+    rc=${PIPESTATUS[0]}
+  fi
+
+  kill "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  state_action_clear
+  if [ "$rc" -eq 0 ]; then
+    state_phase "$phase" done
+  else
+    state_phase "$phase" error
+  fi
+  return "$rc"
+}
+
 # Renders a checklist of all phases, marking each based on $1 (the "current"
 # phase name) and $2 ("running" or "done"). Completed phases are tracked in a
 # file under $STATE_DIR so the marks survive the many render calls in main().
@@ -230,6 +357,60 @@ render_checklist() {
     printf '\0338'                                   # restore cursor (DECRC)
     tput cnorm 2>/dev/null || true
   fi
+}
+
+# ----------------------------------------------------------------------
+# Live dashboard lifecycle (the forge-fire setup wizard)
+# ----------------------------------------------------------------------
+# Starts dashboard.py BEFORE phase_preflight so the browser cockpit is alive
+# for the whole bootstrap. Best-effort: any failure leaves the pinned terminal
+# checklist as the working fallback. Skipped entirely under WEYLAND_PLAIN_CHECKLIST.
+WEYLAND_NONCE=""
+phase_dashboard_start() {
+  if [ -n "${WEYLAND_PLAIN_CHECKLIST:-}" ]; then
+    log "dashboard skipped (WEYLAND_PLAIN_CHECKLIST) — terminal checklist only"
+    return 0
+  fi
+  command -v python3 >/dev/null 2>&1 || { warn "python3 missing; dashboard skipped"; return 0; }
+
+  local local_ip dash weyland_dir
+  local_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  WEYLAND_NONCE="$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))' 2>/dev/null || true)"
+  [ -n "$WEYLAND_NONCE" ] || WEYLAND_NONCE="k$(date +%s 2>/dev/null)$$"
+
+  # $STATE_DIR must be writable by us: state.json is written atomically
+  # (tmp + os.replace), which needs directory write. (install-wake chowns it to
+  # the same user later; doing it now is consistent.)
+  sudo mkdir -p "$STATE_DIR" 2>/dev/null || true
+  sudo chown "$(id -un):$(id -gn)" "$STATE_DIR" 2>/dev/null || true
+  sudo chmod 0755 "$STATE_DIR" 2>/dev/null || true
+
+  # Seed the board (all phases pending) before any rite begins.
+  state_init "" "" "$local_ip"
+
+  weyland_dir="$(resolve_weyland_dir 2>/dev/null)" || true
+  dash="${weyland_dir}/bootstrap/dashboard.py"
+  if [ ! -f "$dash" ]; then
+    warn "dashboard.py not found (${dash}); dashboard skipped (terminal fallback)"
+    return 0
+  fi
+
+  nohup python3 "$dash" "$STATE_DIR" "$WEYLAND_NONCE" >"$STATE_DIR/dashboard.log" 2>&1 &
+  echo $! > "$STATE_DIR/dashboard.pid"
+
+  printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      http://%s:8080?k=%s\n\n' \
+    "${local_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
+  log "dashboard live on :8080 (pid $(cat "$STATE_DIR/dashboard.pid" 2>/dev/null))"
+}
+
+phase_dashboard_stop() {
+  local pidf="$STATE_DIR/dashboard.pid" pid
+  [ -f "$pidf" ] || return 0
+  pid="$(cat "$pidf" 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  rm -f "$pidf" 2>/dev/null || true
 }
 
 # ----------------------------------------------------------------------
@@ -358,6 +539,7 @@ phase_identity() {
   # phase_github_auth. So the operator types no tokens at provisioning — just
   # the GitHub browser sign-in.
 
+  state_meta "$PI_NAME" "$DOMAIN"   # name the minion on the live dashboard
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
 
@@ -444,7 +626,8 @@ phase_tailscale() {
   into your Tailscale account and approve.
 
 EOF
-    sudo tailscale up --ssh \
+    run_dance tailscale tailscale 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' -- \
+      'sudo tailscale up --ssh' \
       || die "tailscale up failed"
   fi
 
@@ -491,10 +674,13 @@ phase_github_auth() {
 
 EOF
 
-  gh auth login \
-    --hostname github.com \
-    --git-protocol https \
-    --web
+  # Wrapped for the live dashboard: gh prints the device code + URL, then waits
+  # for the operator's browser. The leading `printf '\n'` answers gh's "Press
+  # Enter to open in browser" prompt (no one is at the Pi's terminal); the
+  # device code + URL are already in the log by then for the dashboard to show.
+  run_dance github_auth github 'https://github\.com/login/device' -- \
+    'printf "\n" | gh auth login --hostname github.com --git-protocol https --web' \
+    || die "gh auth login failed"
 
   # Verify.
   local current_user
@@ -615,7 +801,9 @@ phase_tunnel() {
   and select the zone for ${DEFAULT_DOMAIN_ROOT}.
 
 EOF
-    cloudflared tunnel login
+    run_dance tunnel cloudflare 'https://dash\.cloudflare\.com/argotunnel[^[:space:]]*' -- \
+      'cloudflared tunnel login' \
+      || die "cloudflared tunnel login failed"
   else
     log "cloudflared already authenticated (cert.pem present)"
   fi
@@ -707,7 +895,8 @@ phase_claude_code() {
   email), and approve.
 
 EOF
-    claude auth login \
+    run_dance claude_code anthropic 'https://[A-Za-z0-9.-]*(anthropic\.com|claude\.ai)[^[:space:]]*' -- \
+      'claude auth login' \
       || die "claude auth login failed"
   else
     log "Claude Code already signed in"
@@ -825,6 +1014,7 @@ WEYLAND_OAUTH_CLIENT_ID=weyland-mcp-claude-ai
 WEYLAND_TOKEN_STORE=/var/lib/weyland-mcp/tokens.json
 EOF
     save_state WEYLAND_BEARER_TOKEN "$token"
+    state_result_set bearer "$token"   # stash for the dashboard (never logged)
     log "generated bearer token (preview in summary)"
   else
     log "env file already present at ${env_file}; preserving existing token"
@@ -1017,6 +1207,28 @@ phase_summary() {
     pat_status="NOT set — create a private gist with a 'weyland-pat' file (see below), then re-run; future Pis fetch it automatically."
   fi
 
+  # Publish the end-state to the live dashboard, then flip it to "the rite is
+  # complete". (Mirrors the terminal heredoc below, which stays as the fallback
+  # for WEYLAND_PLAIN_CHECKLIST / no-browser operators.)
+  local proj
+  proj="$(cat <<PROJEOF
+You are working on a single Raspberry Pi minion in Julian's fleet.
+
+This project's MCP connector talks to one specific Pi. Read these files from
+/opt/${PI_NAME:-minion}-pi/ in order: README.md, IDENTITY.md, CURRENT_STATE.md,
+MODULES.md, FLEET.md. Follow the README's communication rules and wake drill.
+When you finish a task, fire Pushcut to Julian's phone.
+PROJEOF
+)"
+  state_result_set mcp_url        "https://${DOMAIN:-this-pi}/mcp"
+  state_result_set consent_tunnel "https://${DOMAIN:-this-pi}/weyland-consent"
+  state_result_set consent_local  "http://${LOCAL_IP}:5002/weyland-consent"
+  state_result_set client_id      "weyland-mcp-claude-ai"
+  state_result_set repo           "https://github.com/${OWNER}/${PI_NAME:-minion}-pi"
+  state_result_set bearer         "${WEYLAND_BEARER_TOKEN:-}"
+  state_result_set project_instructions "$proj"
+  state_ready
+
   cat <<EOF
 
   Pi name:    ${PI_NAME:-?}
@@ -1091,37 +1303,52 @@ EOF
 main() {
   # Always restore the terminal (scroll region + cursor) on exit, even if a
   # phase dies or the user hits Ctrl-C mid-run.
-  trap _checklist_teardown EXIT INT TERM
+  trap '_checklist_teardown; phase_dashboard_stop' EXIT INT TERM
 
   sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
   load_state
-  render_checklist preflight running
+  phase_dashboard_start
+  # render_checklist drives the pinned terminal fallback; state_phase drives
+  # the live dashboard. Both run from the same boundaries.
+  render_checklist preflight running;        state_phase preflight running
   phase_preflight
-  render_checklist preflight done; render_checklist identity running
+  render_checklist preflight done;           state_phase preflight done
+  render_checklist identity running;         state_phase identity running
   phase_identity
-  render_checklist identity done; render_checklist packages running
+  render_checklist identity done;            state_phase identity done
+  render_checklist packages running;         state_phase packages running
   phase_packages
-  render_checklist packages done; render_checklist tailscale running
+  render_checklist packages done;            state_phase packages done
+  render_checklist tailscale running;        state_phase tailscale running
   phase_tailscale
-  render_checklist tailscale done; render_checklist github_auth running
+  render_checklist tailscale done;           state_phase tailscale done
+  render_checklist github_auth running;      state_phase github_auth running
   phase_github_auth
-  render_checklist github_auth done; render_checklist per_pi_repo running
+  render_checklist github_auth done;         state_phase github_auth done
+  render_checklist per_pi_repo running;      state_phase per_pi_repo running
   phase_per_pi_repo
-  render_checklist per_pi_repo done; render_checklist tunnel running
+  render_checklist per_pi_repo done;         state_phase per_pi_repo done
+  render_checklist tunnel running;           state_phase tunnel running
   phase_tunnel
-  render_checklist tunnel done; render_checklist claude_code running
+  render_checklist tunnel done;              state_phase tunnel done
+  render_checklist claude_code running;      state_phase claude_code running
   phase_claude_code
-  render_checklist claude_code done; render_checklist connector running
+  render_checklist claude_code done;         state_phase claude_code done
+  render_checklist connector running;        state_phase connector running
   phase_connector
-  render_checklist connector done; render_checklist vault running
+  render_checklist connector done;           state_phase connector done
+  render_checklist vault running;            state_phase vault running
   phase_vault
-  render_checklist vault done; render_checklist selfdoc running
+  render_checklist vault done;               state_phase vault done
+  render_checklist selfdoc running;          state_phase selfdoc running
   phase_selfdoc
   render_checklist selfdoc done; render_checklist summary done
+  state_phase selfdoc done;                  state_phase summary running
   # Restore the terminal before printing the summary so it lands on a clean,
   # full screen; the frozen checklist above shows every phase complete.
   _checklist_teardown
   phase_summary
+  state_phase summary done
 }
 
 main "$@"
