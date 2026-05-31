@@ -717,6 +717,11 @@ After=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# KillMode=process: on stop, only signal this unit's own (already-exited)
+# main process — never the tmux server/claude that may share the cgroup.
+# Together with no-ExecStop this keeps the session alive across stop/restart
+# even once it is parented under this unit's cgroup.
+KillMode=process
 User=${USER}
 # Create the CC tmux session only if it isn't already running. A service
 # (re)start must never recreate — and so never clobber — a live session.

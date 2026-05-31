@@ -5,6 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# KillMode=process: restart/stop signals only the connector's own main
+# process — NOT other processes that share its cgroup. A CC tmux session
+# first spawned through an MCP shell/tmux verb lives in this cgroup, and the
+# default (control-group) would kill the running Claude Code on every
+# connector restart. process-mode lets the connector restart cleanly while
+# the session survives. Trade-off: transient child shells from MCP verbs are
+# left orphaned rather than reaped on restart — acceptable.
+KillMode=process
 User=admin
 EnvironmentFile=/etc/weyland/mcp.env
 ExecStart=/opt/weyland-mcp/.venv/bin/weyland-mcp
