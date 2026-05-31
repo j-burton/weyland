@@ -95,7 +95,6 @@ PY
 TEMPLATE="${SCRIPT_DIR}/../systemd/weyland-watcher.service.template"
 UNIT_PATH="/etc/systemd/system/weyland-watcher.service"
 sudo sed -e "s|{{ PI_NAME }}|${PI_NAME}|g" \
-         -e "s|{{ USER }}|${USER}|g" \
          "$TEMPLATE" \
   | sudo tee "$UNIT_PATH" >/dev/null
 sudo systemctl daemon-reload
