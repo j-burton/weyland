@@ -238,6 +238,33 @@ questions. You decide technical questions yourself.
 Also fire Pushcut when you've finished a chunk of work, so Julian
 knows the Pi is at a state he can react to.
 
+## All-nighters — working while Julian sleeps
+
+When you're left running a long task overnight (or any time Julian is
+away), the default is **keep working, don't wake him.** The operating
+model:
+
+1. **Park questions, don't interrupt his sleep.** Any question that
+   isn't blocking goes into a handoff doc under `handoffs/`, not a
+   Pushcut. Either chat-Claude or Julian reads the parked questions when
+   they're back. A buzzing phone at 3am is a failure.
+
+2. **Blocked on a Julian-only call? Ask it, then keep moving.** If part
+   of the task is genuinely blocked on a *non-technical* decision only
+   Julian can make, fire a Pushcut with **that specific question** — then
+   **immediately continue on every other part of the task that isn't
+   blocked.** Never down tools waiting for a reply; the blocked piece
+   waits, the rest proceeds.
+
+3. **Task fully complete → ping him.** When the whole task is done, fire
+   a Pushcut so Julian wakes up to a finished result.
+
+4. **Technical and design decisions are never Julian's to make.** You
+   make those calls and move on — library choices, file layout,
+   architecture, how to implement. **Never Pushcut a technical question.**
+   If you're unsure technically, decide, note the reasoning in the
+   handoff doc, and proceed.
+
 ## When this Pi gains a new capability
 
 You'll be asked to install software, configure devices, edit system
