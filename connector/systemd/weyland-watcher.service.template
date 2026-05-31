@@ -4,7 +4,12 @@ After=network-online.target
 
 [Service]
 Type=simple
-User={{ USER }}
+# Run as admin (the CC session / tmux-socket owner) — matches
+# weyland-mcp.service. Hardcoded rather than {{ USER }} on purpose: when
+# install-wake.sh is run under sudo, ${USER} resolves to root and bakes the
+# wrong user into the unit. The watcher writes /var/lib/weyland and
+# /var/log/weyland-wake.log, both admin-owned.
+User=admin
 Environment=WEYLAND_PI_NAME={{ PI_NAME }}
 Environment=CC_WATCHER_PANE={{ PI_NAME }}:0
 # Start 30s after CC so the watcher doesn't fire phantom pings on Pi boot
