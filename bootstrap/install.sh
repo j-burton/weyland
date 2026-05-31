@@ -401,13 +401,11 @@ phase_dashboard_start() {
   printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      http://%s:8080?k=%s\n\n' \
     "${local_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
   log "dashboard live on :8080 (pid $(cat "$STATE_DIR/dashboard.pid" 2>/dev/null))"
-
-  # Hold here so the operator can open the page before the identity questions
-  # start scrolling the terminal. (|| true: don't abort under set -e on EOF/
-  # non-interactive stdin.)
-  printf '  Press ENTER when you have opened the wizard page...' >&2
-  read -r _ || true
+  log "open the wizard on your phone/laptop and answer there — no need to watch this terminal."
 }
+
+# True when the live dashboard is running (browser-driven identity available).
+_dashboard_active() { [ -f "$STATE_DIR/dashboard.pid" ] && [ -n "${WEYLAND_NONCE:-}" ]; }
 
 phase_dashboard_stop() {
   local pidf="$STATE_DIR/dashboard.pid" pid
@@ -469,26 +467,11 @@ phase_preflight() {
 # ----------------------------------------------------------------------
 # Phase 1 — Identity (who is this Pi?)
 # ----------------------------------------------------------------------
-phase_identity() {
-  log "Phase 1: identity"
-
-  # Skip if already set (re-run case).
-  load_state
-  if [ -n "${PI_NAME:-}" ] && [ -n "${DOMAIN:-}" ]; then
-    log "identity already set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
-    return 0
-  fi
-
-  # PI_NAME: lowercase, alnum + hyphens, 2-32 chars, no leading/trailing hyphen.
-  # Default to the Pi's current hostname if it's a valid name AND isn't the
-  # generic 'raspberrypi'. Otherwise no default — make the user pick.
-  local current_host
-  current_host="$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')"
-  local default_name=""
-  if [[ "$current_host" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]] \
-     && [ "$current_host" != "raspberrypi" ]; then
-    default_name="$current_host"
-  fi
+# Identity input — terminal prompts (fallback path / WEYLAND_PLAIN_CHECKLIST).
+# Sets globals PI_NAME DOMAIN IDENT_PC_HOST IDENT_WAKE_TOK. The name regex:
+# lowercase alnum + hyphens, 2-32 chars, no leading/trailing hyphen.
+_identity_from_terminal() {
+  local default_name="$1" name dom
   while :; do
     if [ -n "$default_name" ]; then
       read -r -p "What should this Pi be called? [${default_name}] " name
@@ -496,66 +479,104 @@ phase_identity() {
     else
       read -r -p "What should this Pi be called? " name
     fi
-    if [[ "$name" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
-      break
-    fi
-    warn "invalid name. Use lowercase letters, digits, hyphens. 2-32 chars. No leading/trailing hyphen."
+    [[ "$name" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]] && break
+    warn "invalid name. lowercase letters, digits, hyphens. 2-32 chars. no leading/trailing hyphen."
   done
   PI_NAME="$name"
-  save_state PI_NAME "$PI_NAME"
+  read -r -p "Domain for this Pi's MCP endpoint? [${PI_NAME}.${DEFAULT_DOMAIN_ROOT}] " dom
+  DOMAIN="${dom:-${PI_NAME}.${DEFAULT_DOMAIN_ROOT}}"
+  read -r -p "PC Tailscale hostname for wake (e.g. ju-laptop.tail875649.ts.net — blank to skip): " IDENT_PC_HOST
+  [ -n "$IDENT_PC_HOST" ] && read -r -p "PC wake token (X-Wake-Token): " IDENT_WAKE_TOK
+}
 
-  # Set the system hostname to match PI_NAME so mDNS (.local) resolves to
-  # this Pi from the start. Patch /etc/hosts' 127.0.1.1 line to match.
+# Identity input — the live wizard. Polls for identity.json (written by
+# dashboard.py on POST /identity), then reads the values. Falls back to terminal
+# prompts after a long wait or if the wizard returns an invalid name.
+_identity_from_browser() {
+  local default_name="$1" f="$STATE_DIR/identity.json" waited=0
+  log "answer the identity questions in the wizard page — no need to touch this terminal."
+  while [ ! -f "$f" ]; do
+    sleep 2; waited=$((waited + 2))
+    if [ "$waited" -ge 1800 ]; then
+      warn "no name received from the wizard in 30 min — prompting in the terminal."
+      _identity_from_terminal "$default_name"
+      return 0
+    fi
+  done
+  local _vals=()
+  mapfile -t _vals < <(python3 - "$f" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = {}
+for k in ("pi_name", "domain", "pc_wake", "wake_token"):
+    print(str(d.get(k, "") or "").strip())
+PY
+  )
+  PI_NAME="${_vals[0]:-}"; DOMAIN="${_vals[1]:-}"
+  IDENT_PC_HOST="${_vals[2]:-}"; IDENT_WAKE_TOK="${_vals[3]:-}"
+  if ! [[ "$PI_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
+    warn "the wizard returned an invalid name ('${PI_NAME}') — prompting in the terminal."
+    _identity_from_terminal "$default_name"
+  else
+    log "received from the wizard: PI_NAME=${PI_NAME}"
+  fi
+}
+
+phase_identity() {
+  log "Phase 1: identity"
+
+  # Skip if already set (re-run case).
+  load_state
+  if [ -n "${PI_NAME:-}" ] && [ -n "${DOMAIN:-}" ]; then
+    log "identity already set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
+    state_meta "$PI_NAME" "$DOMAIN"
+    return 0
+  fi
+
+  # Default name = the Pi's hostname if it's valid and not the stock
+  # 'raspberrypi'; otherwise the operator must provide one.
+  local current_host default_name=""
+  current_host="$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  if [[ "$current_host" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]] \
+     && [ "$current_host" != "raspberrypi" ]; then
+    default_name="$current_host"
+  fi
+
+  # Gather identity from the browser when the wizard is live, else the terminal.
+  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""
+  if _dashboard_active; then
+    _identity_from_browser "$default_name"
+  else
+    _identity_from_terminal "$default_name"
+  fi
+
+  PI_NAME="${PI_NAME:-$default_name}"
+  [ -n "$PI_NAME" ] || die "no minion name provided"
+  DOMAIN="${DOMAIN:-${PI_NAME}.${DEFAULT_DOMAIN_ROOT}}"
+  save_state PI_NAME "$PI_NAME"
+  save_state DOMAIN "$DOMAIN"
+
+  # System hostname to match PI_NAME (mDNS .local); patch /etc/hosts 127.0.1.1.
   if [ "$(hostname)" != "$PI_NAME" ]; then
     sudo hostnamectl set-hostname "$PI_NAME" || warn "could not set hostname"
     sudo sed -i "s/127.0.1.1.*/127.0.1.1\t${PI_NAME}/" /etc/hosts || true
-    log "hostname set to ${PI_NAME} — reconnect SSH if needed"
+    log "hostname set to ${PI_NAME}"
   fi
 
-  # DOMAIN: default to <PI_NAME>.$DEFAULT_DOMAIN_ROOT, accept override.
-  local default_domain="${PI_NAME}.${DEFAULT_DOMAIN_ROOT}"
-  read -r -p "Domain for this Pi's MCP endpoint? [${default_domain}] " dom
-  DOMAIN="${dom:-$default_domain}"
-  save_state DOMAIN "$DOMAIN"
-
-  # PC AHK wake channel (optional). The watcher/notify scripts POST here so
-  # the AHK listener on Julian's PC pops the Claude window. Use the PC's
-  # Tailscale (MagicDNS) hostname — not a raw IP — so it keeps resolving if
-  # the PC's address changes. Leave blank to skip (Pushcut-only). Saved to
-  # state and written to /etc/weyland/wake.env by install-wake.sh; the token
-  # is never committed to the repo.
-  local pc_host wake_tok
-  read -r -p "PC Tailscale hostname for wake (e.g. ju-laptop.tail875649.ts.net — blank to skip): " pc_host
-  if [ -n "$pc_host" ]; then
-    PC_WAKE_URL="http://${pc_host}:7777"
-    save_state PC_WAKE_URL "$PC_WAKE_URL"
-    read -r -p "PC wake token (X-Wake-Token): " wake_tok
-    WAKE_TOKEN="${wake_tok:-}"
-    save_state WAKE_TOKEN "$WAKE_TOKEN"
+  # PC AHK wake channel (optional). Tailscale (MagicDNS) hostname, never a raw
+  # IP. Written to /etc/weyland/wake.env by install-wake.sh; token never committed.
+  if [ -n "${IDENT_PC_HOST:-}" ]; then
+    PC_WAKE_URL="http://${IDENT_PC_HOST}:7777"; save_state PC_WAKE_URL "$PC_WAKE_URL"
+    WAKE_TOKEN="${IDENT_WAKE_TOK:-}"; save_state WAKE_TOKEN "$WAKE_TOKEN"
     log "PC wake channel: ${PC_WAKE_URL}"
   else
-    save_state PC_WAKE_URL ""
-    save_state WAKE_TOKEN ""
+    save_state PC_WAKE_URL ""; save_state WAKE_TOKEN ""
     log "PC wake channel skipped (Pushcut-only)"
   fi
 
-  # Note: nothing secret is prompted here. The Pushcut secret comes from the
-  # vault (phase_vault); the WEYLAND_PAT is fetched from a private gist on
-  # Julian's GitHub account during phase_connector, using the gh session from
-  # phase_github_auth. So the operator types no tokens at provisioning — just
-  # the GitHub browser sign-in.
-
   state_meta "$PI_NAME" "$DOMAIN"   # name the minion on the live dashboard
-
-  # Reprint the wizard URL (it scrolled off above) — only if the dashboard is
-  # actually running.
-  if [ -f "$STATE_DIR/dashboard.pid" ] && [ -n "${WEYLAND_NONCE:-}" ]; then
-    local _ip
-    _ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
-    printf '\n  wizard still live — open: http://%s:8080?k=%s\n\n' \
-      "${_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
-  fi
-
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
 
@@ -1314,12 +1335,33 @@ EOF
 }
 
 # ----------------------------------------------------------------------
+# Teardown / signal handling
+# ----------------------------------------------------------------------
+# Restore the terminal + stop the dashboard. Used on every exit.
+_cleanup() {
+  _checklist_teardown
+  phase_dashboard_stop
+}
+# Ctrl-C / SIGTERM / SSH hangup: clean up, kill any background children
+# (dashboard, run_dance watchers, tee, …) and DIE. The bootstrap must never
+# keep running in the background after the operator interrupts it.
+_on_signal() {
+  trap - INT TERM HUP EXIT     # disarm to avoid re-entry
+  printf '\n' >&2
+  warn "interrupted — tearing down and killing background processes."
+  _cleanup
+  pkill -P $$ 2>/dev/null || true
+  exit 130
+}
+
+# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 main() {
-  # Always restore the terminal (scroll region + cursor) on exit, even if a
-  # phase dies or the user hits Ctrl-C mid-run.
-  trap '_checklist_teardown; phase_dashboard_stop' EXIT INT TERM
+  # Restore the terminal on normal exit; die cleanly (killing the dashboard +
+  # children) on interrupt/term/hangup — never run away in the background.
+  trap _cleanup EXIT
+  trap _on_signal INT TERM HUP
 
   sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
   load_state

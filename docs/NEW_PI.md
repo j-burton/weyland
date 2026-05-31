@@ -31,6 +31,21 @@ Every bootstrap after that — on this and all future Pis — fetches it
 automatically via your GitHub sign-in. If the gist doesn't exist yet, the
 bootstrap prints exactly these instructions and continues; create it and re-run.
 
+## Tip: let a Claude find the Pi for you — no IP hunting
+
+If you have a Claude with network/terminal access on your PC (e.g. a Claude
+Code session), you don't need to discover the new Pi's address by hand. Ask it
+to **scan the LAN for the freshly-imaged Pi** (an `arp`/`nmap` sweep for a new
+Raspberry Pi MAC or the `raspberrypi` hostname) and hand back the **complete**
+command — SSH in *and* kick off the bootstrap — as a single PowerShell line you
+just paste:
+
+```powershell
+ssh admin@<found-ip> "bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh)"
+```
+
+Scan → one line → paste → open the wizard URL it prints. No manual IP hunting.
+
 ## What happens next
 
 The bootstrap runs **12 phases** — preflight, identity, packages, tailscale,
@@ -38,20 +53,26 @@ github_auth, per-Pi repo, tunnel, claude_code, connector, vault, selfdoc,
 summary — with a pinned checklist tracking progress. It's re-runnable:
 completed phases are skipped on a re-run.
 
-You're hands-on in just two spots: the identity prompts and four browser
-dances. Everything else is automatic.
+You're hands-on in just two spots: the **identity form in the wizard** and the
+four browser dances. Everything else is automatic — and all of it happens in
+the browser. After you open the wizard URL you never need the SSH window again.
 
-### Identity prompts (phase 2)
+### Identity (answered in the wizard, not the terminal)
 
-- **"What should this Pi be called?"** — a short lowercase name like `coffee`
-  or `unifi`.
-- **Domain** — defaults to `<name>.julianburton.com`; accept it.
-- **PC Tailscale hostname for wake** — your PC's Tailscale (MagicDNS) name,
-  e.g. `ju-laptop.tail875649.ts.net`. This is the PC the wake system pops a
-  Claude window on. **Optional — blank skips the PC wake channel**
+The wizard's first screen is a form. Fill it in the browser — the bootstrap
+pauses and waits for you to submit it (it is NOT asked in the SSH window):
+
+- **Minion name** — a short lowercase name like `inkypi` or `coffee` (letters,
+  digits, hyphens; 2–32 chars).
+- **Domain** — e.g. `julianburton.com` (the MCP endpoint becomes
+  `<name>.<domain>`).
+- **PC wake hostname** *(optional)* — your PC's Tailscale (MagicDNS) name,
+  e.g. `ju-laptop.tail875649.ts.net`; blank skips the PC wake channel
   (Pushcut-only).
-- **PC wake token** — only asked if you gave a hostname; the shared
-  `X-Wake-Token` the PC's listener expects.
+- **PC wake token** *(optional)* — the shared `X-Wake-Token` the PC listener
+  expects.
+
+(If the wizard can't be reached, the bootstrap falls back to terminal prompts.)
 
 ### Four browser dances
 
