@@ -17,6 +17,18 @@ OWNER="j-burton"
 DEFAULT_DOMAIN_ROOT="julianburton.com"
 STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 
+# Permanent PAT for weyland repo access — allows minions to update the
+# bootstrap. Scoped to j-burton/weyland contents only.
+#
+# Intentionally left EMPTY in version control — never commit a live PAT to
+# this repo. To seed it on a Pi, export WEYLAND_PAT in the environment
+# before running this script; phase_connector then writes it to
+# /etc/weyland/weyland.env. (The forthcoming live setup dashboard will also
+# let the operator paste it into a local web form — see the wizard design
+# doc.) When empty, the env slot is still created so the PAT can be added
+# later.
+WEYLAND_PAT="${WEYLAND_PAT:-}"
+
 # Where to find the weyland repo on disk. Normally $0 resolves to a
 # real path (script was downloaded + run). When piped via
 # `bash <(curl ...)`, $0 is /dev/fd/<N> so we have to clone weyland
@@ -61,6 +73,7 @@ PHASES=(
   "tunnel:Cloudflare tunnel"
   "claude_code:Claude Code + wake"
   "connector:Weyland MCP connector"
+  "selfdoc:Self-documentation"
   "summary:Summary"
 )
 
@@ -91,9 +104,67 @@ load_state() {
   fi
 }
 
-# Render a checklist of all phases, marking each based on $1 (the
-# "current" phase name) and $2 ("running" or "done").
-# We track completed phases via a simple file in $STATE_DIR.
+# Renders a checklist of all phases, marking each based on $1 (the "current"
+# phase name) and $2 ("running" or "done"). Completed phases are tracked in a
+# file under $STATE_DIR so the marks survive the many render calls in main().
+#
+# On a real terminal (stdout is a tty) the checklist is PINNED to the top of
+# the screen with a DECSTBM scroll region: the header holds the top rows and
+# all phase output scrolls in the region below it, so the checklist stays put
+# and is rewritten in place as phases complete. When stdout is not a tty
+# (piped/redirected), when WEYLAND_PLAIN_CHECKLIST is set, or when the
+# terminal is too short, we fall back to the original plain scrolling list.
+CHECKLIST_RULE="────────────────────────────────────────"
+CHECKLIST_TTY=0      # 1 once we've taken over a real terminal
+CHECKLIST_INIT=0     # 1 after the first in-place render
+CHECKLIST_DOWN=0     # 1 after teardown (idempotent guard)
+CHECKLIST_HEIGHT=$(( ${#PHASES[@]} + 4 ))   # rule,title,rule,<phases>,rule
+
+# Emit the checklist body (header + one line per phase). Markers use direct
+# ANSI colour codes rather than tput setaf for portability.
+_checklist_body() {
+  local current="$1" current_state="$2" completed="$3"
+  local entry name label marker
+  printf '%s\n' "$CHECKLIST_RULE"
+  printf ' weyland bootstrap\n'
+  printf '%s\n' "$CHECKLIST_RULE"
+  for entry in "${PHASES[@]}"; do
+    name="${entry%%:*}"
+    label="${entry#*:}"
+    if printf '%s\n' "$completed" | grep -qx "$name"; then
+      marker=$'\033[0;32m✓\033[0m'    # done — green
+    elif [ "$name" = "$current" ] && [ "$current_state" = "running" ]; then
+      marker=$'\033[0;36m▶\033[0m'    # running — cyan
+    else
+      marker=' '                       # pending
+    fi
+    printf '  %s %s\n' "$marker" "$label"
+  done
+  printf '%s\n' "$CHECKLIST_RULE"
+}
+
+# Plain scrolling checklist — the safe fallback when we can't drive the tty.
+_render_checklist_plain() {
+  printf '\n'
+  _checklist_body "$1" "$2" "$3"
+  printf '\n'
+}
+
+# Restore the terminal: drop the scroll region, show the cursor, move below
+# the header. Idempotent and safe to call from an EXIT/INT/TERM trap.
+_checklist_teardown() {
+  [ "$CHECKLIST_DOWN" = "1" ] && return 0
+  CHECKLIST_DOWN=1
+  if [ "$CHECKLIST_TTY" = "1" ]; then
+    local rows
+    rows="$(tput lines 2>/dev/null || echo 24)"
+    printf '\033[r'                 # reset scroll region to the full screen
+    printf '\033[%d;1H' "$rows"     # cursor to the bottom row
+    tput cnorm 2>/dev/null || true  # ensure the cursor is visible again
+    printf '\n'
+  fi
+}
+
 render_checklist() {
   local current="$1" current_state="$2"
   local done_file="$STATE_DIR/run-progress"
@@ -111,26 +182,37 @@ render_checklist() {
     completed="$(cat "$done_file" 2>/dev/null || true)"
   fi
 
-  # Render.
-  echo ""
-  echo "────────────────────────────────────────"
-  echo " weyland bootstrap"
-  echo "────────────────────────────────────────"
-  local entry name label marker
-  for entry in "${PHASES[@]}"; do
-    name="${entry%%:*}"
-    label="${entry#*:}"
-    if echo "$completed" | grep -qx "$name"; then
-      marker="  ✓"
-    elif [ "$name" = "$current" ] && [ "$current_state" = "running" ]; then
-      marker="  ▶"
-    else
-      marker="   "
-    fi
-    printf " %s %s\n" "$marker" "$label"
-  done
-  echo "────────────────────────────────────────"
-  echo ""
+  local rows
+  rows="$(tput lines 2>/dev/null || echo 24)"
+
+  # Fallback to plain scrolling when not a terminal, when explicitly
+  # requested, or when the terminal is too short to host a scroll region.
+  if [ ! -t 1 ] || [ -n "${WEYLAND_PLAIN_CHECKLIST:-}" ] \
+     || [ "$rows" -le "$(( CHECKLIST_HEIGHT + 2 ))" ]; then
+    _render_checklist_plain "$current" "$current_state" "$completed"
+    return 0
+  fi
+
+  if [ "$CHECKLIST_INIT" = "0" ]; then
+    # First render: take over the terminal.
+    CHECKLIST_TTY=1
+    tput civis 2>/dev/null || true                  # hide cursor during setup
+    printf '\033[2J\033[H'                           # clear screen, cursor home
+    _checklist_body "$current" "$current_state" "$completed"
+    printf '\033[%d;%dr' "$(( CHECKLIST_HEIGHT + 1 ))" "$rows"  # region below header
+    printf '\033[%d;1H' "$(( CHECKLIST_HEIGHT + 1 ))"          # park at region top
+    tput cnorm 2>/dev/null || true
+    CHECKLIST_INIT=1
+  else
+    # Update in place: rewrite the header rows; the scroll region's log
+    # output is left untouched.
+    tput civis 2>/dev/null || true
+    printf '\0337'                                   # save cursor (DECSC)
+    printf '\033[H'                                  # home to top of header
+    _checklist_body "$current" "$current_state" "$completed"
+    printf '\0338'                                   # restore cursor (DECRC)
+    tput cnorm 2>/dev/null || true
+  fi
 }
 
 # ----------------------------------------------------------------------
@@ -217,6 +299,14 @@ phase_identity() {
   done
   PI_NAME="$name"
   save_state PI_NAME "$PI_NAME"
+
+  # Set the system hostname to match PI_NAME so mDNS (.local) resolves to
+  # this Pi from the start. Patch /etc/hosts' 127.0.1.1 line to match.
+  if [ "$(hostname)" != "$PI_NAME" ]; then
+    sudo hostnamectl set-hostname "$PI_NAME" || warn "could not set hostname"
+    sudo sed -i "s/127.0.1.1.*/127.0.1.1\t${PI_NAME}/" /etc/hosts || true
+    log "hostname set to ${PI_NAME} — reconnect SSH if needed"
+  fi
 
   # DOMAIN: default to <PI_NAME>.$DEFAULT_DOMAIN_ROOT, accept override.
   local default_domain="${PI_NAME}.${DEFAULT_DOMAIN_ROOT}"
@@ -582,8 +672,12 @@ EOF
   # Step 3: launch CC inside a long-lived tmux session named after the Pi.
   if ! tmux has-session -t "$PI_NAME" 2>/dev/null; then
     log "starting tmux session '${PI_NAME}' running CC"
+    # Run claude directly — no `| tee`. Piping CC's stdout breaks its
+    # interactive TTY ("Input must be provided either through stdin or as a
+    # prompt argument when using --print"). CC keeps its own logs; the tmux
+    # session is the live view.
     tmux new-session -d -s "$PI_NAME" -c "${PI_DIR:-$HOME}" \
-      "claude --dangerously-skip-permissions 2>&1 | tee -a $HOME/.claude/${PI_NAME}.log"
+      "claude --dangerously-skip-permissions"
     # Note: --dangerously-skip-permissions is the "trust the minion" mode
     # matching the connector's philosophy. The user accepts the risk.
   else
@@ -602,7 +696,7 @@ After=network-online.target
 [Service]
 Type=forking
 User=${USER}
-ExecStart=/usr/bin/tmux new-session -d -s ${PI_NAME} -c ${PI_DIR:-$HOME} 'claude --dangerously-skip-permissions 2>&1 | tee -a ${HOME}/.claude/${PI_NAME}.log'
+ExecStart=/usr/bin/tmux new-session -d -s ${PI_NAME} -c ${PI_DIR:-$HOME} 'claude --dangerously-skip-permissions'
 ExecStop=/usr/bin/tmux kill-session -t ${PI_NAME}
 Restart=on-failure
 RestartSec=5
@@ -683,6 +777,26 @@ EOF
     log "env file already present at ${env_file}; preserving existing token"
   fi
 
+  # Step 3b: store the weyland PAT so this minion can update its own
+  # bootstrap. The value comes from $WEYLAND_PAT (empty unless the operator
+  # exported it) — it is deliberately NOT committed to the weyland repo.
+  # An existing file is preserved (never clobber a PAT already on the Pi).
+  #
+  # SECURITY: this PAT is permanent and shared across all minions. Do not
+  # revoke it unless you are rotating every minion.
+  local weyland_env="${env_dir}/weyland.env"
+  if [ ! -f "$weyland_env" ]; then
+    printf 'WEYLAND_PAT=%s\n' "${WEYLAND_PAT:-}" | sudo tee "$weyland_env" >/dev/null
+    sudo chmod 0640 "$weyland_env"
+    if [ -n "${WEYLAND_PAT:-}" ]; then
+      log "stored weyland PAT at ${weyland_env}"
+    else
+      log "created ${weyland_env} (WEYLAND_PAT empty — add it later when ready)"
+    fi
+  else
+    log "weyland.env already present at ${weyland_env}; preserving"
+  fi
+
   # Step 4: render systemd unit from template and install.
   local unit_path="/etc/systemd/system/weyland-mcp.service"
   sudo sed "s|{{ PI_NAME }}|${PI_NAME}|g" \
@@ -704,7 +818,35 @@ EOF
 }
 
 # ----------------------------------------------------------------------
-# Phase 8 — Final summary
+# Phase 8 — Self-documentation
+# ----------------------------------------------------------------------
+phase_selfdoc() {
+  log "Phase 8: self-documentation"
+
+  load_state
+  [ -n "${PI_NAME:-}" ] || die "PI_NAME not set"
+  [ -n "${PI_DIR:-}"  ] || die "PI_DIR not set; phase 4 must run first"
+
+  if ! tmux has-session -t "$PI_NAME" 2>/dev/null; then
+    warn "tmux session '${PI_NAME}' not found; skipping self-documentation task"
+    return 0
+  fi
+
+  # The first task we hand the freshly-bootstrapped CC: document this Pi.
+  # Sent as a single line so the TUI receives it as one prompt; Enter submits.
+  local task
+  task="You have just been bootstrapped as a new weyland minion. Your first task is to document this Pi. Investigate what hardware is attached, what software is installed and running, and what this Pi appears to be for. Then fill in these files in ${PI_DIR}: HARDWARE.md (physical hardware, attached devices, display, GPIO etc — use lsusb, lspci, vcgencmd, aplay -l, hostname -I, df -h, free -h); CURRENT_STATE.md (what services are running, anything broken, recent changes — first entry: 'bootstrapped by weyland'); MODULES.md (one section per installed service/app, following the template); README.md (one paragraph describing what this Pi is and does). Commit and push all four files when done. If the Pi appears to be a fresh install with no purpose yet, say so in README.md and leave MODULES.md sparse."
+
+  log "sending self-documentation task to CC in tmux session '${PI_NAME}'"
+  tmux send-keys -t "$PI_NAME" -l "$task"
+  sleep 1
+  tmux send-keys -t "$PI_NAME" Enter
+
+  log "Self-documentation task sent to CC — check the repo in a few minutes."
+}
+
+# ----------------------------------------------------------------------
+# Phase 9 — Final summary
 # ----------------------------------------------------------------------
 phase_summary() {
   load_state
@@ -712,6 +854,14 @@ phase_summary() {
 
   local LOCAL_IP
   LOCAL_IP="$(hostname -I | awk '{print $1}')"
+
+  # Is the weyland PAT present on this Pi yet? (Never print the value.)
+  local pat_status
+  if [ -n "${WEYLAND_PAT:-}" ]; then
+    pat_status="seeded from the environment during bootstrap."
+  else
+    pat_status="not set yet — add a fine-grained PAT (j-burton/weyland, Contents read+write, no expiry) when ready."
+  fi
 
   cat <<EOF
 
@@ -760,6 +910,15 @@ phase_summary() {
 
     The bearer is hashed on disk; this is your only chance to copy it.
 
+  --- WEYLAND PAT (lets this minion update its own bootstrap) ---
+
+    Stored at: /etc/weyland/weyland.env  (key: WEYLAND_PAT)
+
+    Status: ${pat_status}
+
+    SECURITY: this PAT is permanent and shared across all minions.
+    Do not revoke it unless you are rotating every minion.
+
   --- THEN ---
 
     1. Create a Claude Desktop project pointed at the per-Pi repo:
@@ -775,6 +934,10 @@ EOF
 # Main
 # ----------------------------------------------------------------------
 main() {
+  # Always restore the terminal (scroll region + cursor) on exit, even if a
+  # phase dies or the user hits Ctrl-C mid-run.
+  trap _checklist_teardown EXIT INT TERM
+
   sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
   load_state
   render_checklist preflight running
@@ -795,9 +958,13 @@ main() {
   phase_claude_code
   render_checklist claude_code done; render_checklist connector running
   phase_connector
-  render_checklist connector done; render_checklist summary running
+  render_checklist connector done; render_checklist selfdoc running
+  phase_selfdoc
+  render_checklist selfdoc done; render_checklist summary done
+  # Restore the terminal before printing the summary so it lands on a clean,
+  # full screen; the frozen checklist above shows every phase complete.
+  _checklist_teardown
   phase_summary
-  render_checklist summary done
 }
 
 main "$@"

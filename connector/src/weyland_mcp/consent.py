@@ -44,7 +44,7 @@ button:hover{background:#000}
 <p>Paste the weyland-mcp bearer to authorize the connector.</p>
 <form method="POST" action="/weyland-consent">
 <input type="hidden" name="pending_id" value="$pending_id">
-<input type="password" name="bearer" placeholder="bearer token" autocomplete="off" autofocus required>
+<input type="password" name="bearer" value="$bearer_value" placeholder="bearer token" autocomplete="off" autofocus required>
 <button type="submit">Approve</button>
 </form>
 $error_block
@@ -52,10 +52,14 @@ $error_block
 """)
 
 
-def _consent_html(pending_id: str, *, error: str | None = None) -> str:
+def _consent_html(
+    pending_id: str, *, error: str | None = None, bearer_value: str = "",
+) -> str:
     err = f'<p class="err">{escape(error)}</p>' if error else ""
     return _CONSENT_FORM_TEMPLATE.substitute(
-        pending_id=escape(pending_id), error_block=err,
+        pending_id=escape(pending_id),
+        bearer_value=escape(bearer_value),
+        error_block=err,
     )
 
 
@@ -71,7 +75,11 @@ async def consent_route(
             return HTMLResponse(
                 "<p>Missing pending_id in URL.</p>", status_code=400,
             )
-        return HTMLResponse(_consent_html(pending_id))
+        # Optional `?token=...` pre-fills the bearer field as a fallback for
+        # when pasting into the form is awkward. The user still submits the
+        # form deliberately — we never auto-submit.
+        token = request.query_params.get("token", "")
+        return HTMLResponse(_consent_html(pending_id, bearer_value=token))
 
     # POST
     form = await request.form()

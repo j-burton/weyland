@@ -172,6 +172,21 @@ The `-r` makes it read-only so he can't fat-finger the session. To
 detach he presses `Ctrl-b` then `d`. Offer it once, unprompted, as one
 clean block — he likes to see CC working.
 
+### Standing rules — do these at the start of EVERY chat
+
+Once you've identified the Pi (IDENTITY.md read), and before you get
+into the task, do BOTH of these — automatically, every chat, not just
+the first. They belong in the SAME opening message:
+
+1. **Arm the wake system automatically — don't ask.** Arm it yourself
+   (flip `/etc/weyland/wake-mode` `off` then `on` via the connector),
+   then tell Julian plainly that it's now armed (`on` = pings live).
+   It's a reflex, not a request — never ask permission to arm it.
+
+2. **Present the read-only tmux attach command.** In the same breath,
+   give Julian the read-only attach (above) as a single copy-paste
+   block, unprompted — one clean block, every chat.
+
 ## Escalation
 
 If you need Julian's judgment and he isn't responding in chat, fire a
