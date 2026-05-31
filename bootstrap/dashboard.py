@@ -343,6 +343,7 @@ HTML = r"""<!doctype html>
       <p class="sub" id="auth-sub"></p>
       <div class="authrow">
         <a class="btn btn-blood" id="auth-btn" href="#" target="_blank" rel="noopener">Swear the oath &rarr;</a>
+        <span class="awaiting" id="auth-wait" style="display:none">&#9672; awaiting the gate&hellip;</span>
         <code class="rune" id="auth-code" style="display:none"></code>
         <button class="copy" id="auth-copy" data-copy="auth-code" type="button" style="display:none">Copy</button>
       </div>
