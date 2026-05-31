@@ -366,6 +366,7 @@ render_checklist() {
 # for the whole bootstrap. Best-effort: any failure leaves the pinned terminal
 # checklist as the working fallback. Skipped entirely under WEYLAND_PLAIN_CHECKLIST.
 WEYLAND_NONCE=""
+WEYLAND_DASH_URL=""
 phase_dashboard_start() {
   if [ -n "${WEYLAND_PLAIN_CHECKLIST:-}" ]; then
     log "dashboard skipped (WEYLAND_PLAIN_CHECKLIST) — terminal checklist only"
@@ -398,10 +399,17 @@ phase_dashboard_start() {
   nohup python3 "$dash" "$STATE_DIR" "$WEYLAND_NONCE" >"$STATE_DIR/dashboard.log" 2>&1 &
   echo $! > "$STATE_DIR/dashboard.pid"
 
-  printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      http://%s:8080?k=%s\n\n' \
-    "${local_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
+  # The URL is printed by _announce_wizard AFTER the checklist is drawn, so the
+  # checklist's scroll-region setup doesn't immediately push it off screen.
+  WEYLAND_DASH_URL="http://${local_ip:-<this-pi-ip>}:8080?k=${WEYLAND_NONCE}"
   log "dashboard live on :8080 (pid $(cat "$STATE_DIR/dashboard.pid" 2>/dev/null))"
-  log "open the wizard on your phone/laptop and answer there — no need to watch this terminal."
+}
+
+# Print the wizard URL prominently. Called once, AFTER the checklist is drawn.
+_announce_wizard() {
+  [ -n "${WEYLAND_DASH_URL:-}" ] || return 0
+  printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      %s\n  answer everything there; no need to watch this terminal.\n\n' \
+    "$WEYLAND_DASH_URL" >&2
 }
 
 # True when the live dashboard is running (browser-driven identity available).
@@ -448,17 +456,11 @@ phase_preflight() {
     fi
   done
 
-  # Re-run guard: if PI_NAME is already set in state, ask before continuing.
+  # Re-run: every phase is idempotent, so just continue — never block on a
+  # prompt (the operator may never be at this terminal). Log it for context.
   if [ -f "$STATE_DIR/env" ]; then
     load_state
-    if [ -n "${PI_NAME:-}" ]; then
-      warn "This Pi is already named '${PI_NAME}'."
-      read -r -p "Continue anyway (re-run)? [y/N] " ans
-      case "${ans,,}" in
-        y|yes) : ;;
-        *) die "aborted by user" ;;
-      esac
-    fi
+    [ -n "${PI_NAME:-}" ] && log "re-run detected (already named '${PI_NAME}') — continuing."
   fi
 
   log "pre-flight OK"
@@ -1369,6 +1371,7 @@ main() {
   # render_checklist drives the pinned terminal fallback; state_phase drives
   # the live dashboard. Both run from the same boundaries.
   render_checklist preflight running;        state_phase preflight running
+  _announce_wizard   # print the wizard URL now the checklist is up
   phase_preflight
   render_checklist preflight done;           state_phase preflight done
   render_checklist identity running;         state_phase identity running
