@@ -1364,6 +1364,30 @@ _on_signal() {
   exit 130
 }
 
+# Ensure the service user has passwordless sudo, persisted in
+# /etc/sudoers.d/010-weyland-nopasswd. Raspberry Pi OS already grants the first
+# user NOPASSWD, so the common case is silent (no prompt — the wizard URL stays
+# the first and only output). Only a Pi WITHOUT passwordless sudo gets one
+# clearly-labelled prompt, up front. Idempotent; validated with visudo so a
+# malformed file can never lock sudo out. Needed regardless of mode: the
+# background dashboard's `sudo -n` writes (e.g. /save-pat) depend on it.
+_ensure_nopasswd_sudo() {
+  local u f tmp line
+  u="$(id -un)"
+  f="/etc/sudoers.d/010-weyland-nopasswd"
+  line="${u} ALL=(ALL) NOPASSWD:ALL"
+  if ! sudo -n true 2>/dev/null; then
+    printf '\n  one-time: enter this Pi'"'"'s sudo password to begin the rite...\n' >&2
+    sudo -v || { warn "sudo unavailable — cannot proceed"; return 1; }
+  fi
+  tmp="$(mktemp)"
+  printf '%s\n' "$line" > "$tmp"
+  if sudo visudo -cf "$tmp" >/dev/null 2>&1; then
+    sudo install -m 0440 -o root -g root "$tmp" "$f" 2>/dev/null || true
+  fi
+  rm -f "$tmp"
+}
+
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
@@ -1373,8 +1397,10 @@ main() {
   trap _cleanup EXIT
   trap _on_signal INT TERM HUP
 
-  # Dashboard FIRST: it prints the URL and (in dashboard mode) silences the
-  # terminal. Nothing prints before the URL.
+  # Passwordless sudo first (silent when already granted, which is the norm) so
+  # nothing prompts after the URL. Then the dashboard prints the URL and (in
+  # dashboard mode) silences the terminal. Nothing prints before the URL.
+  _ensure_nopasswd_sudo
   load_state
   phase_dashboard_start
   sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
