@@ -401,6 +401,12 @@ phase_dashboard_start() {
   printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      http://%s:8080?k=%s\n\n' \
     "${local_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
   log "dashboard live on :8080 (pid $(cat "$STATE_DIR/dashboard.pid" 2>/dev/null))"
+
+  # Hold here so the operator can open the page before the identity questions
+  # start scrolling the terminal. (|| true: don't abort under set -e on EOF/
+  # non-interactive stdin.)
+  printf '  Press ENTER when you have opened the wizard page...' >&2
+  read -r _ || true
 }
 
 phase_dashboard_stop() {
@@ -540,6 +546,16 @@ phase_identity() {
   # the GitHub browser sign-in.
 
   state_meta "$PI_NAME" "$DOMAIN"   # name the minion on the live dashboard
+
+  # Reprint the wizard URL (it scrolled off above) — only if the dashboard is
+  # actually running.
+  if [ -f "$STATE_DIR/dashboard.pid" ] && [ -n "${WEYLAND_NONCE:-}" ]; then
+    local _ip
+    _ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    printf '\n  wizard still live — open: http://%s:8080?k=%s\n\n' \
+      "${_ip:-<this-pi-ip>}" "$WEYLAND_NONCE" >&2
+  fi
+
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
 
