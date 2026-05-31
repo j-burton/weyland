@@ -38,28 +38,61 @@ this out for a fresh chat-Claude; the short version, for reference:
    verbs. Default-allow — use it directly for routine actions, no
    asking.
 2. **CHANNEL** — TWO-WAY comms with the CC running on the Pi (in a
-   tmux session named after the Pi). SEND with
-   `tmux_send_keys(session=<pi>, keys=..., enter=true)`; READ the pane
-   back with `tmux_capture_pane` or `tmux capture-pane -t <pi> -p -S -N`
-   via the shell verb. For long instructions, `write_file` a handoff
-   doc then send `read <path> and execute`. Prefer delegating a whole
-   task in one instruction over hand-driving every step — it's far
-   faster.
+   tmux session named after the Pi). chat-Claude and CC do **not** share
+   a conversation — you communicate by **relay**:
+   1. **Write a handoff doc** — `write_file` the task into the per-Pi
+      repo under `handoffs/` (durable, reviewable, survives context limits).
+   2. **Send CC to read it** —
+      `tmux_send_keys(session=<pi>, keys="Read <repo>/handoffs/<doc>.md and execute", enter=true)`.
+   3. **Read the pane back** — `tmux_capture_pane` (or
+      `tmux capture-pane -t <pi> -p -S -N` via the shell verb) to follow
+      CC's progress and pick up its results or questions.
+   For quick exchanges, skip the doc and send-keys a short prompt
+   directly. Prefer delegating a whole task in one instruction over
+   hand-driving every step — CC is local and far faster at multi-step
+   work.
 3. **WAKE SYSTEM** — watcher + `cc-notify` ping chat-Claude with
    `[HAL 9000 STANDING BY]` when CC finishes, and escalate to Julian's
-   phone if CC stalls. Controlled by `/etc/weyland/wake-mode` (on/off).
+   phone only on the final shot if CC stalls. Controlled by
+   `/etc/weyland/wake-mode` (on/off). **Works from anywhere — not just the
+   Pi's LAN:** the PC ping POSTs to Julian's PC by its Tailscale (MagicDNS)
+   hostname, so the wake loop reaches him wherever he is.
 
 **Standing rule:** whenever you start driving a Pi's tmux/CC, offer
 Julian one copy-paste command to attach read-only —
-`tmux attach -t <pi> -r` if he's on the Pi, or
-`ssh -t admin@<pi-addr> 'tmux attach -t <pi> -r'` from his PC. Detach
-is `Ctrl-b` then `d`.
+`tmux attach -t <pi> -r` if he's on the Pi, or, **from anywhere**,
+`ssh -t admin@<pi-tailscale-name> 'tmux attach -t <pi> -r'` using the
+Pi's Tailscale MagicDNS name (works off-LAN, not just the local network).
+Detach is `Ctrl-b` then `d`.
 
-## Re-arm the watcher after every CC task
+## Re-arm the watcher — ONLY after CC completes a task
 
-When you dispatch a task to the CC on a minion, after CC finishes,
-re-arm the wake system on that minion in the same turn. Flip the
-mode off then on. This applies to every minion you drive.
+When you dispatch a task to the CC on a minion, **after CC finishes**,
+re-arm the wake system on that minion in the same turn (`restart_wake`,
+or flip `wake-mode` off then on). This applies to every minion you drive.
+
+**Restart the watcher only at that moment — never otherwise.** Do NOT
+restart it in response to a ping, and not between instructions to CC while
+a task is still running. Each restart resets the shot counter to 1, so a
+mid-ladder restart throws away the escalation already in progress and the
+ladder never reaches the final shot that pages Julian. Re-arm = "this task
+is done, arm for the next one," nothing else.
+
+## End of a long session — always read the pane
+
+At the end of a long session, **always capture and read the CC pane to
+confirm CC's final state, regardless of whether a ping arrived.** Pings can
+be missed or suppressed (`wake-mode=off`, a watcher hiccup, debounce, or you
+simply didn't act on the PC shots), so never treat "no ping" as "nothing to
+see." A direct pane read is the only reliable end-of-session check.
+
+## The vault — fleet secrets
+
+Fleet-wide secrets (the Pushcut webhook, etc.) live in the private
+`j-burton/weyland-secrets` repo and are fetched during the bootstrap's vault
+phase via the PAT. Operators don't manage them per-Pi — adding a secret to
+that repo's `secrets.env` distributes it to every future minion
+automatically, and rotating one is a single edit there.
 
 ## Don't pre-empt Julian's stopping decisions
 

@@ -52,19 +52,26 @@ the Pi name when you first open a chat.
 
 When the bootstrap finishes:
 
-- A new private GitHub repo at `j-burton/<pi-name>-pi` to hold this
-  Pi's state, modules, and handoffs.
+- A new private GitHub repo at `j-burton/<pi-name>-pi`, **seeded with
+  templates and already self-documented** by CC (hardware, software, and
+  purpose) before you open the first chat.
+- The Pi joined to Tailscale — reachable from anywhere via
+  `ssh admin@<pi-name>.tail<tailnet>.ts.net`, not just the LAN.
 - A Cloudflare tunnel exposing the Pi's MCP service at
   `https://<pi-name>.julianburton.com/mcp`.
 - Claude Code running in a tmux session named after the Pi.
-- A wake system that pings Julian's phone via Pushcut when CC stalls
-  or finishes a task.
-- A bearer token + URL printed at the end — paste those into Claude
-  Desktop's "Add custom connector" dialog to make the Pi reachable.
+- A wake system: PC pings to chat-Claude when CC finishes or stalls,
+  escalating to a Pushcut on Julian's phone only as a last resort. The PC
+  wake hostname is configured during the identity phase.
+- Fleet secrets (Pushcut webhook, etc.) fetched from the private
+  `weyland-secrets` vault during bootstrap — no per-Pi secret management.
+- An OAuth 2.1 connector — add the URL + Client ID in Claude Desktop, then
+  paste the one-time bearer token into the Pi's consent page (all printed in
+  the summary).
 
 ## Repo layout
 
-- `bootstrap/install.sh` — the one-liner. 8 phases, each idempotent.
+- `bootstrap/install.sh` — the one-liner. 12 phases, each idempotent.
 - `connector/` — the Python MCP service that runs on each Pi.
 - `connector/scripts/` — the wake system (`cc-notify` hook +
   `cc-tmux-watcher` daemon, `install-wake.sh` installer).

@@ -1,14 +1,23 @@
 # Adding a new minion
 
-The whole flow, from "I have a fresh Pi" to "I'm talking to it via
-Claude."
+The whole flow, from "I have a fresh Pi" to "I'm talking to it via Claude."
 
 ## Prerequisites
 
-- A Raspberry Pi running fresh Raspberry Pi OS (or another
-  Debian-family Linux).
+- A Raspberry Pi running fresh Raspberry Pi OS (or another Debian-family
+  Linux).
 - Network connected (wired or wifi configured during imaging).
 - An SSH connection from your laptop into the Pi.
+- **The weyland PAT exported** in that SSH session before you run the
+  one-liner. It's a fine-grained PAT with Contents access to `j-burton/weyland`
+  **and** `j-burton/weyland-secrets`. The bootstrap stores it at
+  `/etc/weyland/weyland.env`; the vault phase uses it to fetch fleet secrets.
+  It is **not** prompted — export it first, or add it later (the wake system's
+  Pushcut secret won't arrive until it's present):
+
+  ```bash
+  export WEYLAND_PAT=github_pat_...
+  ```
 
 ## The one-liner
 
@@ -20,70 +29,109 @@ bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootst
 
 ## What happens next
 
-The bootstrap script runs through 8 phases. The interactive bits:
+The bootstrap runs **12 phases** — preflight, identity, packages, tailscale,
+github_auth, per-Pi repo, tunnel, claude_code, connector, vault, selfdoc,
+summary — with a pinned checklist tracking progress. It's re-runnable:
+completed phases are skipped on a re-run.
 
-1. **Phase 1 (identity)**: It asks "What should this Pi be called?"
-   Pick a short lowercase name like `coffee` or `unifi`. It also
-   asks for the domain — default is `<name>.julianburton.com`,
-   accept it.
+You're hands-on in just two spots: the identity prompts and four browser
+dances. Everything else is automatic.
 
-2. **Phase 3 (GitHub)**: A URL appears. Open it in any browser
-   you're logged into GitHub on. Approve.
+### Identity prompts (phase 2)
 
-3. **Phase 5 (Cloudflare)**: Another URL appears. Open it in any
-   browser logged into Cloudflare. Select the `julianburton.com`
-   zone. Approve.
+- **"What should this Pi be called?"** — a short lowercase name like `coffee`
+  or `unifi`.
+- **Domain** — defaults to `<name>.julianburton.com`; accept it.
+- **PC Tailscale hostname for wake** — your PC's Tailscale (MagicDNS) name,
+  e.g. `ju-laptop.tail875649.ts.net`. This is the PC the wake system pops a
+  Claude window on. **Optional — blank skips the PC wake channel**
+  (Pushcut-only).
+- **PC wake token** — only asked if you gave a hostname; the shared
+  `X-Wake-Token` the PC's listener expects.
 
-4. **Phase 6 (Anthropic)**: Another URL appears. Open it, sign in
-   with Google (or whatever you normally use for Anthropic),
-   approve.
+### Four browser dances
 
-Three browser dances total. Each takes ~10 seconds.
+Each prints a URL — open it in a browser already logged into that service,
+approve, done (~10 seconds each):
 
-The rest of the bootstrap (system packages, building the connector,
-setting up Cloudflare tunnel, installing the wake system) is
-automatic. Total time: maybe 5 minutes.
+1. **Tailscale** (phase 4) — joins the Pi to the tailnet.
+2. **GitHub** (phase 5) — to create and push the per-Pi repo.
+3. **Cloudflare** (phase 7) — select the `julianburton.com` zone for the
+   tunnel.
+4. **Anthropic / Claude Code** (phase 8) — sign in so CC can run on the Pi.
+
+### The automatic phases
+
+The rest run on their own: system packages; the per-Pi repo (created **and**
+seeded with templates); the Cloudflare tunnel; the MCP connector; the
+**vault** (fetches fleet secrets like the Pushcut webhook from the private
+`j-burton/weyland-secrets` repo using the PAT — non-fatal if the vault is
+unreachable); and **self-documentation** (CC is handed a task to document the
+Pi's hardware, software, and purpose into its repo automatically). Total time:
+~5 minutes.
 
 ## The summary
 
-At the end, the script prints something like:
+At the end the script prints a block with everything you need:
 
 ```
   Pi name:    coffee
   Domain:     coffee.julianburton.com
   MCP URL:    https://coffee.julianburton.com/mcp
   Repo:       https://github.com/j-burton/coffee-pi
-  
-  --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
-  
-    Name:    coffee
-    URL:     https://coffee.julianburton.com/mcp
-    Bearer:  <random token>
-```
+  SSH (over Tailscale, from anywhere):
+              ssh admin@coffee.tail<tailnet>.ts.net
 
-Copy those three lines (Name, URL, Bearer).
+  --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
+    Name:            coffee
+    URL:             https://coffee.julianburton.com/mcp
+    OAuth Client ID: weyland-mcp-claude-ai
+    Client Secret:   (leave blank — public client, PKCE)
+
+  --- ON FIRST CONNECT ---
+    Open the consent URL and paste the bearer token there ONE time:
+      https://coffee.julianburton.com/weyland-consent
+    Fallback (same network only):
+      http://<local-ip>:5002/weyland-consent
+    Bearer token:  <random token>   ← shown only once
+```
 
 ## Adding to Claude Desktop
 
-1. Open Claude Desktop.
-2. Settings → Connectors → Add custom connector.
-3. Paste the URL and Bearer token.
-4. Save.
+The connector uses **OAuth 2.1**, so the bearer isn't pasted straight into
+Claude Desktop — it goes through a one-time consent page:
 
-That connector is now available on web, desktop, and mobile Claude.
+1. Claude Desktop → Settings → Connectors → Add custom connector.
+2. Enter the **URL** and **OAuth Client ID** (`weyland-mcp-claude-ai`); leave
+   the Client Secret blank.
+3. On first connect, Claude Desktop redirects to the Pi's **consent page**.
+   Open the consent URL from the summary and **paste the bearer token there
+   once**. If the tunnel URL won't load, use the local-IP fallback (same
+   network), or put your laptop on a phone hotspot and use the tunnel URL.
+
+That connector is then available on web, desktop, and mobile Claude.
+
+## Reaching the Pi directly
+
+After bootstrap the Pi is on Tailscale, so it's reachable **from anywhere** —
+not just the local network:
+
+```bash
+ssh admin@<pi-name>.tail<tailnet>.ts.net
+```
 
 ## The project
 
-1. In Claude Desktop, create a new project named after the Pi.
-2. Add the per-Pi GitHub repo (`j-burton/<pi-name>-pi`) as a
-   source.
-3. Open a new chat in the project.
-4. Say "hi" — fresh chat-Claude will read the README and orient.
+1. In Claude Desktop, create a project named after the Pi.
+2. Add the per-Pi GitHub repo (`j-burton/<pi-name>-pi`) as a source — it's
+   already seeded **and** self-documented by the bootstrap.
+3. Open a new chat and say "hi" — fresh chat-Claude reads the README and
+   orients itself.
 
 You're done. Talk to Claude about what you want the Pi to do.
 
 ## If something goes wrong
 
-The bootstrap is designed to be re-runnable. Run it again. It will
-skip steps that already succeeded and pick up where it stopped. If
-it's truly stuck, reflash the SD card and start over.
+The bootstrap is re-runnable — run the one-liner again and it picks up where it
+stopped, skipping completed phases. If it's truly stuck, reflash the SD card
+and start over. The recovery model for minions is reflash, not repair.
