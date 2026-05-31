@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""cc-tmux-watcher: poll CC's tmux pane, detect permission prompts, fire wake.
+"""cc-tmux-watcher: poll CC's tmux pane, detect the idle state, fire wake.
 
-Ported from Atlas's cc-tmux-watcher. Each shot fires BOTH the PC AHK
-channel (port 7777, configured in /etc/weyland/wake.env) and Pushcut to
-Julian's phone. The 5-shot HAL ladder is collapsed to a simpler 3-shot
-escalation:
+This CC runs with --dangerously-skip-permissions, so it never shows a
+permission prompt. Instead it sits idle at its prompt showing the
+bypass-permissions indicator ("⏵⏵ bypass permissions"); while working it
+shows "esc to interrupt". The watcher treats a sustained idle state as
+"CC is waiting / may be stuck" and escalates.
 
-  Shot 1 (10s)     — "CC waiting"
-  Shot 2 (5 min)   — "Still waiting"
-  Shot 3 (15 min)  — "May be stuck"
+Each shot fires BOTH the PC AHK channel (port 7777, configured in
+/etc/weyland/wake.env) and Pushcut to Julian's phone. The 5-shot ladder,
+by gap from the previous shot:
 
-After shot 3 the cycle is locked until the prompt clears or changes.
+  Shot 1 (10s)  Shot 2 (+60s)  Shot 3 (+60s)  Shot 4 (+480s)  Shot 5 (+600s)
+
+After shot 5 the cycle locks until CC leaves the idle state.
 
 Stable hashing + 2-poll candidate debounce preserved from Atlas — these
 are the engineering that makes the watcher reliable, not Atlas-specific.
@@ -18,7 +21,6 @@ are the engineering that makes the watcher reliable, not Atlas-specific.
 import hashlib
 import json
 import os
-import re
 import subprocess
 import time
 import urllib.error
@@ -33,26 +35,35 @@ STATE_FILE = "/var/lib/weyland/tmux-watcher-state.json"
 LOG = "/var/log/weyland-wake.log"
 
 POLL_SEC = 3
+# 5-shot escalation. Gap before shot 1 is INITIAL_DELAY_SEC; gaps before
+# shots 2..5 are RETRY_SCHEDULE. Cadence: 10s, +60s, +60s, +480s, +600s.
 INITIAL_DELAY_SEC = int(os.environ.get("CC_WATCHER_DELAY", "10"))
-SHOT_2_GAP_SEC   = int(os.environ.get("CC_WATCHER_SHOT2_GAP",   "300"))   # 5 min
-SHOT_3_GAP_SEC   = int(os.environ.get("CC_WATCHER_SHOT3_GAP",   "600"))   # +10 min = 15 min total
-MAX_FIRES = 3
+SHOT_GAPS_SEC = [
+    int(os.environ.get("CC_WATCHER_SHOT2_GAP", "60")),
+    int(os.environ.get("CC_WATCHER_SHOT3_GAP", "60")),
+    int(os.environ.get("CC_WATCHER_SHOT4_GAP", "480")),
+    int(os.environ.get("CC_WATCHER_SHOT5_GAP", "600")),
+]
+MAX_FIRES = 5
 DEBOUNCE_POLLS = 2
 CLEAR_DEBOUNCE = 2
 
-RETRY_SCHEDULE = [SHOT_2_GAP_SEC, SHOT_3_GAP_SEC]
+RETRY_SCHEDULE = SHOT_GAPS_SEC
 
+# This CC runs with --dangerously-skip-permissions: no permission prompts.
+# It is idle (done, waiting for input) when the bypass-permissions indicator
+# is present AND it is not actively working ("esc to interrupt").
 PROMPT_MARKERS = [
-    "Do you want to proceed?",
-    "Do you want to make this edit",
-    "Do you want to create",
-    "Do you want to overwrite",
+    "⏵⏵ bypass permissions",
 ]
+WORKING_MARKER = "esc to interrupt"
 
 SHOT_MESSAGES = {
-    1: "CC waiting on permission prompt",
-    2: "Still waiting (5 min)",
-    3: "CC may be stuck (15 min idle)",
+    1: "CC idle — standing by",
+    2: "CC still idle (~1 min)",
+    3: "CC still idle (~2 min)",
+    4: "CC idle ~10 min — chat-Claude, confirm status",
+    5: "Chat-Claude unresponsive — CC may be stuck (~20 min)",
 }
 
 
@@ -123,50 +134,35 @@ def capture_pane():
 
 
 def detect_prompt(text):
+    """Return an idle-state block if CC is sitting idle at its prompt, else None.
+
+    CC is idle when the bypass-permissions indicator is present and it is NOT
+    actively working ("esc to interrupt"). The marker sits in the bottom
+    status bar, so we grab the output above it for notification context."""
     if not text:
         return None
+    if WORKING_MARKER in text:
+        return None  # CC is working, not idle — don't wake
     for marker in PROMPT_MARKERS:
         if marker in text:
             idx = text.find(marker)
-            return text[max(0, idx - 200):idx + 600]
+            return text[max(0, idx - 600):idx + 200]
     return None
 
 
-OPTION_RE = re.compile(
-    r"^[\s│┃|╎┆❯➤→>*\-]*([1-9])[.)]\s+(\S.*?)\s*$")
-_BORDER = " \t│┃|╎┆─╴╶"
-_EDGE = _BORDER + "❯➤→>*"
-_ANIM_RE = re.compile(
-    r"esc to interrupt|\(\d+\s*s|[✶✳✴✦⋆●◐◓◑◒]|tokens|crunch|running…|waiting…|thinking",
-    re.I)
-
-
 def stable_signature(block):
-    lines = block.splitlines()
-    marker_idx = None
-    for i, ln in enumerate(lines):
+    """Collapse the idle state to one stable signature.
+
+    With --dangerously-skip-permissions there are no numbered options to
+    parse; the idle screen is static, so a single constant signature is the
+    most reliable anchor for the escalation ladder. Distinct idle periods are
+    separated by working periods, which clear the watcher state."""
+    if not block:
+        return None
+    for ln in block.splitlines():
         if any(m in ln for m in PROMPT_MARKERS):
-            marker_idx = i
-            break
-    if marker_idx is None:
-        return None
-    options = []
-    for ln in lines[marker_idx + 1:]:
-        mo = OPTION_RE.match(ln)
-        if mo:
-            options.append(f"{mo.group(1)}. {mo.group(2).strip(_BORDER)}")
-    if not options:
-        return None
-    ctx_parts = []
-    for ln in lines[:marker_idx]:
-        t = ln.strip(_EDGE).strip()
-        if not t or _ANIM_RE.search(t):
-            continue
-        if t.lower() in ("bash command", "edit file", "create file", "write file"):
-            continue
-        ctx_parts.append(t)
-    head = ["$ " + " | ".join(ctx_parts)[:80]] if ctx_parts else []
-    return "\n".join(head + [lines[marker_idx].strip(_EDGE).strip()] + options)
+            return "CC-IDLE-AT-PROMPT"
+    return None
 
 
 def fire_pushcut(shot, summary):
@@ -223,7 +219,7 @@ def fire(block, shot):
 
 def main():
     log(f"watcher-start pi={PI_NAME} pane={PANE} initial_delay={INITIAL_DELAY_SEC} "
-        f"shot2_gap={SHOT_2_GAP_SEC} shot3_gap={SHOT_3_GAP_SEC} max_fires={MAX_FIRES} "
+        f"shot_gaps={SHOT_GAPS_SEC} max_fires={MAX_FIRES} "
         f"debounce_polls={DEBOUNCE_POLLS}")
     no_marker_polls = 0
     while True:
@@ -260,8 +256,9 @@ def main():
             now = time.time()
 
             if h == last_fired_hash:
-                interval = RETRY_SCHEDULE[fire_count - 1] \
-                    if 1 <= fire_count <= len(RETRY_SCHEDULE) else SHOT_2_GAP_SEC
+                idx = fire_count - 1
+                interval = RETRY_SCHEDULE[idx] \
+                    if 0 <= idx < len(RETRY_SCHEDULE) else RETRY_SCHEDULE[-1]
                 if (fire_count < MAX_FIRES and last_fire_time is not None
                         and (now - last_fire_time) >= interval):
                     new_count = fire_count + 1
