@@ -310,6 +310,8 @@ _checklist_teardown() {
 }
 
 render_checklist() {
+  # In dashboard mode the terminal is silent — the browser is the only surface.
+  [ -n "${WEYLAND_DASH_ACTIVE:-}" ] && return 0
   local current="$1" current_state="$2"
   local done_file="$STATE_DIR/run-progress"
   sudo mkdir -p "$STATE_DIR" 2>/dev/null || true
@@ -367,6 +369,7 @@ render_checklist() {
 # checklist as the working fallback. Skipped entirely under WEYLAND_PLAIN_CHECKLIST.
 WEYLAND_NONCE=""
 WEYLAND_DASH_URL=""
+WEYLAND_DASH_ACTIVE=""
 phase_dashboard_start() {
   if [ -n "${WEYLAND_PLAIN_CHECKLIST:-}" ]; then
     log "dashboard skipped (WEYLAND_PLAIN_CHECKLIST) — terminal checklist only"
@@ -378,15 +381,17 @@ phase_dashboard_start() {
   local_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   WEYLAND_NONCE="$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))' 2>/dev/null || true)"
   [ -n "$WEYLAND_NONCE" ] || WEYLAND_NONCE="k$(date +%s 2>/dev/null)$$"
+  WEYLAND_DASH_URL="http://${local_ip:-<this-pi-ip>}:8080?k=${WEYLAND_NONCE}"
+
+  # The URL is the VERY FIRST thing the bootstrap prints — before any setup
+  # output or the checklist — so it can never scroll away.
+  _announce_wizard
 
   # $STATE_DIR must be writable by us: state.json is written atomically
-  # (tmp + os.replace), which needs directory write. (install-wake chowns it to
-  # the same user later; doing it now is consistent.)
+  # (tmp + os.replace), which needs directory write.
   sudo mkdir -p "$STATE_DIR" 2>/dev/null || true
   sudo chown "$(id -un):$(id -gn)" "$STATE_DIR" 2>/dev/null || true
   sudo chmod 0755 "$STATE_DIR" 2>/dev/null || true
-
-  # Seed the board (all phases pending) before any rite begins.
   state_init "" "" "$local_ip"
 
   weyland_dir="$(resolve_weyland_dir 2>/dev/null)" || true
@@ -398,17 +403,20 @@ phase_dashboard_start() {
 
   nohup python3 "$dash" "$STATE_DIR" "$WEYLAND_NONCE" >"$STATE_DIR/dashboard.log" 2>&1 &
   echo $! > "$STATE_DIR/dashboard.pid"
+  WEYLAND_DASH_ACTIVE=1
 
-  # The URL is printed by _announce_wizard AFTER the checklist is drawn, so the
-  # checklist's scroll-region setup doesn't immediately push it off screen.
-  WEYLAND_DASH_URL="http://${local_ip:-<this-pi-ip>}:8080?k=${WEYLAND_NONCE}"
+  # Terminal goes silent from here: phases, checklist and logs all live in the
+  # browser now. The rest of the run is redirected to a log for debugging; the
+  # operator never needs to watch this terminal again. (Plain mode / a missing
+  # dashboard keeps the terminal checklist instead — we return before this.)
+  exec >>"$STATE_DIR/bootstrap.log" 2>&1
   log "dashboard live on :8080 (pid $(cat "$STATE_DIR/dashboard.pid" 2>/dev/null))"
 }
 
-# Print the wizard URL prominently. Called once, AFTER the checklist is drawn.
+# Print the wizard URL — the one and only terminal output (dashboard mode).
 _announce_wizard() {
   [ -n "${WEYLAND_DASH_URL:-}" ] || return 0
-  printf '\n  \033[1;38;5;208mweyland setup\033[0m — open this on your phone or laptop:\n      %s\n  answer everything there; no need to watch this terminal.\n\n' \
+  printf '\n\n  \033[1;38;5;208m⚒  WEYLAND SUMMONS YOU, MY LORD\033[0m\n\n      \033[1;97m%s\033[0m\n\n  open this URL to begin the rite of binding.\n\n' \
     "$WEYLAND_DASH_URL" >&2
 }
 
@@ -1365,13 +1373,14 @@ main() {
   trap _cleanup EXIT
   trap _on_signal INT TERM HUP
 
-  sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
+  # Dashboard FIRST: it prints the URL and (in dashboard mode) silences the
+  # terminal. Nothing prints before the URL.
   load_state
   phase_dashboard_start
-  # render_checklist drives the pinned terminal fallback; state_phase drives
-  # the live dashboard. Both run from the same boundaries.
+  sudo rm -f "$STATE_DIR/run-progress" 2>/dev/null || true
+  # render_checklist drives the pinned terminal fallback (plain / no-dashboard
+  # mode only — it no-ops in dashboard mode); state_phase drives the dashboard.
   render_checklist preflight running;        state_phase preflight running
-  _announce_wizard   # print the wizard URL now the checklist is up
   phase_preflight
   render_checklist preflight done;           state_phase preflight done
   render_checklist identity running;         state_phase identity running
