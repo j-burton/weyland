@@ -29,6 +29,13 @@ STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 # later.
 WEYLAND_PAT="${WEYLAND_PAT:-}"
 
+# Pushcut webhook secret — the always-on phone-notification channel for the
+# wake system. Like the PAT, it is NEVER committed to this repo: it is prompted
+# during phase_identity (or seed it by exporting PUSHCUT_WEBHOOK_SECRET before
+# running), saved to per-Pi state, and written to /etc/weyland/pushcut.env by
+# install-wake.sh.
+PUSHCUT_WEBHOOK_SECRET="${PUSHCUT_WEBHOOK_SECRET:-}"
+
 # Where to find the weyland repo on disk. Normally $0 resolves to a
 # real path (script was downloaded + run). When piped via
 # `bash <(curl ...)`, $0 is /dev/fd/<N> so we have to clone weyland
@@ -333,6 +340,25 @@ phase_identity() {
     save_state PC_WAKE_URL ""
     save_state WAKE_TOKEN ""
     log "PC wake channel skipped (Pushcut-only)"
+  fi
+
+  # Pushcut webhook secret — the always-on phone-notification channel. Prompted
+  # here (or pre-seeded via $PUSHCUT_WEBHOOK_SECRET); never committed to the
+  # repo. Saved to state and written to /etc/weyland/pushcut.env by
+  # install-wake.sh. Press Enter to keep a seeded value or to skip.
+  local pushcut_secret pushcut_prompt
+  if [ -n "${PUSHCUT_WEBHOOK_SECRET:-}" ]; then
+    pushcut_prompt="Pushcut webhook secret [Enter = keep seeded value]: "
+  else
+    pushcut_prompt="Pushcut webhook secret (blank to skip phone notifications): "
+  fi
+  read -r -p "$pushcut_prompt" pushcut_secret
+  PUSHCUT_WEBHOOK_SECRET="${pushcut_secret:-${PUSHCUT_WEBHOOK_SECRET:-}}"
+  save_state PUSHCUT_WEBHOOK_SECRET "$PUSHCUT_WEBHOOK_SECRET"
+  if [ -n "$PUSHCUT_WEBHOOK_SECRET" ]; then
+    log "Pushcut webhook channel configured"
+  else
+    log "Pushcut webhook secret blank — phone notifications disabled until set"
   fi
 
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
@@ -744,7 +770,7 @@ EOF
   weyland_dir="$(resolve_weyland_dir)"
   log "installing wake system"
   bash "${weyland_dir}/connector/scripts/install-wake.sh" \
-    "$PI_NAME" "${PC_WAKE_URL:-}" "${WAKE_TOKEN:-}"
+    "$PI_NAME" "${PC_WAKE_URL:-}" "${WAKE_TOKEN:-}" "${PUSHCUT_WEBHOOK_SECRET:-}"
 }
 
 # ----------------------------------------------------------------------

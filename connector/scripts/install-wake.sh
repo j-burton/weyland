@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_NAME="${1:-minion}"
 PC_WAKE_URL="${2:-}"   # AHK listener URL, e.g. http://<pc>:7777 (blank = skip)
 WAKE_TOKEN="${3:-}"    # X-Wake-Token shared with the PC AHK listener
+# Pushcut webhook secret — prompted during bootstrap (or seeded via env), never
+# committed to the repo. Falls back to $PUSHCUT_WEBHOOK_SECRET if not passed.
+PUSHCUT_WEBHOOK_SECRET="${4:-${PUSHCUT_WEBHOOK_SECRET:-}}"
 
 # 1. Install scripts to /usr/local/bin.
 sudo install -m 0755 "${SCRIPT_DIR}/cc-notify"        /usr/local/bin/cc-notify
@@ -34,19 +37,30 @@ sudo touch /var/log/weyland-wake.log
 sudo chown "admin:admin" /var/log/weyland-wake.log
 sudo chmod 0644 /var/log/weyland-wake.log
 
-# 3. Pushcut env file. Reuses Atlas's webhook secret — same notification on
-#    Julian's phone fires for all minions, distinguished by [pi_name] prefix
-#    in the alert text. If /etc/weyland/pushcut.env already exists, leave it.
+# 3. Pushcut env file. The webhook secret is NEVER committed to the repo — it
+#    is prompted during bootstrap (or seeded via $PUSHCUT_WEBHOOK_SECRET) and
+#    passed in as $4. Shared across all minions: they fire the same
+#    CC_Needs_Julian notification, distinguished by the [pi_name] prefix in the
+#    alert text. An existing /etc/weyland/pushcut.env is preserved so a live
+#    secret already on the Pi is never clobbered.
 if [ ! -f /etc/weyland/pushcut.env ]; then
-  cat <<'EOF' | sudo tee /etc/weyland/pushcut.env >/dev/null
-# Pushcut webhook secret. Shared across all minions — they all fire the
-# same CC_Needs_Julian notification, distinguished by the [pi_name]
-# prefix in the alert text.
-PUSHCUT_WEBHOOK_SECRET=Uz128efYNtFwdgoGYBTuz
-EOF
+  {
+    echo "# Pushcut webhook secret. Shared across all minions — they all fire"
+    echo "# the same CC_Needs_Julian notification, distinguished by the"
+    echo "# [pi_name] prefix in the alert text. Set during bootstrap; never"
+    echo "# committed to the repo."
+    echo "PUSHCUT_WEBHOOK_SECRET=${PUSHCUT_WEBHOOK_SECRET}"
+  } | sudo tee /etc/weyland/pushcut.env >/dev/null
+  # Readable by the service user (cc-notify / watcher run as admin, not root).
+  sudo chmod 0644 /etc/weyland/pushcut.env
+  if [ -n "${PUSHCUT_WEBHOOK_SECRET}" ]; then
+    echo "wrote /etc/weyland/pushcut.env"
+  else
+    echo "created /etc/weyland/pushcut.env (PUSHCUT_WEBHOOK_SECRET empty — add it later)"
+  fi
+else
+  echo "pushcut.env already present; preserving"
 fi
-# Readable by the service user (cc-notify / watcher run as admin, not root).
-sudo chmod 0644 /etc/weyland/pushcut.env
 
 # 3b. PC AHK wake channel config → /etc/weyland/wake.env. The wake scripts
 #     POST here with an X-Wake-Token header so the AHK listener on Julian's
