@@ -710,34 +710,62 @@ phase_summary() {
   load_state
   log "Bootstrap complete."
 
+  local LOCAL_IP
+  LOCAL_IP="$(hostname -I | awk '{print $1}')"
+
   cat <<EOF
 
   Pi name:    ${PI_NAME:-?}
   Domain:     ${DOMAIN:-?}
-  MCP URL:    https://${DOMAIN:-?}/mcp
-  Repo:       https://github.com/${OWNER}/${PI_NAME:-?}-pi
-  SSH:        ssh admin@${TAILSCALE_HOST:-${PI_NAME:-?}}   (over Tailscale, from anywhere)
+
+  MCP URL:
+
+    https://${DOMAIN:-?}/mcp
+
+  Repo:
+
+    https://github.com/${OWNER}/${PI_NAME:-?}-pi
+
+  SSH (over Tailscale, from anywhere):
+
+    ssh admin@${TAILSCALE_HOST:-${PI_NAME:-?}}
 
   --- ADD THIS CONNECTOR TO CLAUDE DESKTOP ---
 
     Name:            ${PI_NAME:-?}
-    URL:             https://${DOMAIN:-?}/mcp
+
+    URL:
+
+    https://${DOMAIN:-?}/mcp
+
     OAuth Client ID: weyland-mcp-claude-ai
     Client Secret:   (leave blank — public client, PKCE)
 
   --- ON FIRST CONNECT ---
 
-    Claude Desktop will redirect you to a consent page. Paste this
-    bearer token there ONE TIME:
+    Claude Desktop will redirect you to a consent page. Open this
+    consent URL and paste the bearer token there ONE TIME:
 
-    Bearer:  ${WEYLAND_BEARER_TOKEN:-(see /var/lib/weyland/env if you missed this)}
+    https://${DOMAIN:-?}/weyland-consent
+
+    If the tunnel URL doesn't load, try the local IP URL (same network only):
+
+    http://${LOCAL_IP}:5002/weyland-consent
+
+    If neither URL loads, connect your laptop to a phone hotspot and use the tunnel URL.
+
+    Bearer token:
+
+    ${WEYLAND_BEARER_TOKEN:-(see /var/lib/weyland/env if you missed this)}
 
     The bearer is hashed on disk; this is your only chance to copy it.
 
   --- THEN ---
 
-    1. Create a Claude Desktop project pointed at the per-Pi repo
-       (https://github.com/${OWNER}/${PI_NAME:-?}-pi).
+    1. Create a Claude Desktop project pointed at the per-Pi repo:
+
+       https://github.com/${OWNER}/${PI_NAME:-?}-pi
+
     2. Talk to Claude — it can now drive this minion.
 
 EOF
