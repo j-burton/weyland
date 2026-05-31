@@ -22,14 +22,16 @@ fi
 sudo chmod 0644 /etc/weyland/wake-mode
 
 # 2b. Runtime state dir + log file must be writable by the service user — the
-#     watcher runs as ${USER}, not root. /var/lib/weyland is root-created by
+#     watcher runs as admin, not root. /var/lib/weyland is root-created by
 #     the bootstrap and /var/log is root-owned, so without fixing ownership
 #     here the watcher fails SILENTLY (can't write its state JSON or its log).
+#     Hardcode admin (not ${USER}): under sudo, ${USER} resolves to root and
+#     would re-break the admin watcher's writes.
 sudo mkdir -p /var/lib/weyland
-sudo chown "${USER}:${USER}" /var/lib/weyland
+sudo chown "admin:admin" /var/lib/weyland
 sudo chmod 0755 /var/lib/weyland
 sudo touch /var/log/weyland-wake.log
-sudo chown "${USER}:${USER}" /var/log/weyland-wake.log
+sudo chown "admin:admin" /var/log/weyland-wake.log
 sudo chmod 0644 /var/log/weyland-wake.log
 
 # 3. Pushcut env file. Reuses Atlas's webhook secret — same notification on
@@ -43,7 +45,7 @@ if [ ! -f /etc/weyland/pushcut.env ]; then
 PUSHCUT_WEBHOOK_SECRET=Uz128efYNtFwdgoGYBTuz
 EOF
 fi
-# Readable by the service user (cc-notify / watcher run as ${USER}, not root).
+# Readable by the service user (cc-notify / watcher run as admin, not root).
 sudo chmod 0644 /etc/weyland/pushcut.env
 
 # 3b. PC AHK wake channel config → /etc/weyland/wake.env. The wake scripts
@@ -67,7 +69,7 @@ if [ ! -f /etc/weyland/wake.env ]; then
     echo "WAKE_TOKEN=${WAKE_TOKEN}"
   } | sudo tee /etc/weyland/wake.env >/dev/null
 fi
-# Readable by the service user (cc-notify / watcher run as ${USER}, not root).
+# Readable by the service user (cc-notify / watcher run as admin, not root).
 sudo chmod 0644 /etc/weyland/wake.env
 
 # 4. Register cc-notify as CC's Notification hook.
