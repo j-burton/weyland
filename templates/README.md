@@ -189,9 +189,20 @@ send — you can read CC back. Always:
 - **READ the pane back** — either the `tmux_capture_pane` verb, or run
   `tmux capture-pane -t <pi> -p -S -N` (last N lines) via the shell
   verb. Check what CC actually did; don't fire and forget.
-- **Long instructions → relay pattern:** don't type a wall of text
-  into the pane. `write_file` a handoff doc, then send CC
-  `read <path> and execute`.
+- **Long instructions → the RELAY pattern.** chat-Claude and CC do NOT
+  share a conversation — you relay. Don't type a wall of text into the
+  pane. Instead:
+  1. **Write a handoff doc** — `write_file` the task into the per-Pi repo
+     under `handoffs/` (durable, reviewable, survives your context limits).
+  2. **Send CC to read it** — `tmux_send_keys(session=<pi>,
+     keys="Read <repo>/handoffs/<doc>.md and execute", enter=true)`.
+  3. **Read the pane back** — `tmux_capture_pane` (or
+     `tmux capture-pane -t <pi> -p -S -N`) to follow CC's progress and pick
+     up its results or questions.
+  For quick exchanges, skip the doc and send-keys a short prompt directly;
+  for anything substantial, the handoff doc IS the unit of work. This relay
+  — not a shared chat — is why handoff docs exist and are written the way
+  they are.
 
 **Prefer delegating a whole task to CC in one instruction** over
 hand-driving every step from your side. CC is local, has its own tools,
@@ -203,6 +214,13 @@ key. Hand me one task; let me run it; read back the result.
 A watcher + `cc-notify` sit alongside CC. Both wake **you** (chat-Claude)
 by popping the Claude window on Julian's PC — neither pages Julian directly
 except the one case below.
+
+**Works from anywhere — not just the Pi's LAN.** The whole loop rides
+Tailscale: the PC ping POSTs to Julian's PC by its Tailscale (MagicDNS)
+hostname, and you reach this minion through the connector and `ssh`/`tmux`
+over Tailscale too. So chat-Claude can drive a minion — and wake Julian's
+PC — wherever any of you happen to be; nobody needs to be on the same
+network.
 
 - **`cc-notify`** fires when CC finishes a task / goes idle at turn-end:
   one PC ping with `[HAL 9000 STANDING BY]`. **PC-only — it never Pushcuts
@@ -250,7 +268,9 @@ single copy-paste command to watch over your shoulder, read-only. Pick
 the right one:
 
 - **Already on the Pi:** `tmux attach -t <pi> -r`
-- **From his PC:** `ssh -t admin@<pi-addr> 'tmux attach -t <pi> -r'`
+- **From anywhere (his PC, laptop, phone):**
+  `ssh -t admin@<pi-tailscale-name> 'tmux attach -t <pi> -r'` — use the Pi's
+  Tailscale MagicDNS name, so it works off-LAN, not just on the local network.
 
 The `-r` makes it read-only so he can't fat-finger the session. To
 detach he presses `Ctrl-b` then `d`. Offer it once, unprompted, as one
@@ -270,6 +290,16 @@ the first. They belong in the SAME opening message:
 2. **Present the read-only tmux attach command.** In the same breath,
    give Julian the read-only attach (above) as a single copy-paste
    block, unprompted — one clean block, every chat.
+
+### Standing rule: check the pane at the END of every long chat
+
+At the end of a long chat, **always capture and read the CC pane to confirm
+CC's final state — regardless of whether a wake ping arrived.** Pings can be
+missed or suppressed (`wake-mode=off`, a watcher hiccup, debounce, or you
+simply didn't act on shots 1–4), so never read "no ping" as "nothing to
+see." A direct pane read (`tmux_capture_pane`) is the only reliable
+end-of-session check: confirm CC finished, surface anything it's waiting on,
+and pick up any parked questions before you close out.
 
 ## Escalation
 
