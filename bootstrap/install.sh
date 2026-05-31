@@ -17,16 +17,13 @@ OWNER="j-burton"
 DEFAULT_DOMAIN_ROOT="julianburton.com"
 STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 
-# Permanent PAT for weyland repo access — allows minions to update the
-# bootstrap. Scoped to j-burton/weyland contents only.
+# Permanent PAT for weyland repo + secrets-vault access — lets minions update
+# their own bootstrap and read the vault. Never committed to this repo.
 #
-# Intentionally left EMPTY in version control — never commit a live PAT to
-# this repo. To seed it on a Pi, export WEYLAND_PAT in the environment
-# before running this script; phase_connector then writes it to
-# /etc/weyland/weyland.env. (The forthcoming live setup dashboard will also
-# let the operator paste it into a local web form — see the wizard design
-# doc.) When empty, the env slot is still created so the PAT can be added
-# later.
+# Normally the operator never sets this: phase_connector fetches it from a
+# PRIVATE gist on the authenticated GitHub account (a 'weyland-pat' file) using
+# the gh session from phase_github_auth. Exporting WEYLAND_PAT before running is
+# only an optional override (e.g. first-ever Pi before the gist exists).
 WEYLAND_PAT="${WEYLAND_PAT:-}"
 
 # Where to find the weyland repo on disk. Normally $0 resolves to a
@@ -103,6 +100,25 @@ load_state() {
     # shellcheck disable=SC1091
     . "$STATE_DIR/env"
   fi
+}
+
+# Fetch the weyland PAT from a PRIVATE gist on the authenticated GitHub account,
+# so the operator never types or remembers it. Convention: a gist (secret is
+# fine) containing a file named 'weyland-pat' whose content is the token. Uses
+# the gh session from phase_github_auth. Prints the token, or nothing if not
+# found. Tolerates a raw token or a KEY=value line with surrounding whitespace.
+fetch_weyland_pat_from_gist() {
+  command -v gh >/dev/null 2>&1 || return 1
+  gh auth status -h github.com >/dev/null 2>&1 || return 1
+  local gid content
+  gid="$(gh api gists --paginate \
+          --jq '.[] | select(.files | has("weyland-pat")) | .id' 2>/dev/null \
+        | head -n1)"
+  [ -n "$gid" ] || return 1
+  content="$(gh api "gists/${gid}" --jq '.files["weyland-pat"].content' 2>/dev/null || true)"
+  printf '%s' "$content" \
+    | grep -oE 'github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+' \
+    | head -n1
 }
 
 # Renders a checklist of all phases, marking each based on $1 (the "current"
@@ -336,9 +352,11 @@ phase_identity() {
     log "PC wake channel skipped (Pushcut-only)"
   fi
 
-  # Note: the Pushcut webhook secret is NOT prompted here — it is distributed
-  # fleet-wide via the vault (phase_vault) from the private weyland-secrets
-  # repo. The operator only needs to provide the WEYLAND_PAT.
+  # Note: nothing secret is prompted here. The Pushcut secret comes from the
+  # vault (phase_vault); the WEYLAND_PAT is fetched from a private gist on
+  # Julian's GitHub account during phase_connector, using the gh session from
+  # phase_github_auth. So the operator types no tokens at provisioning — just
+  # the GitHub browser sign-in.
 
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
@@ -819,24 +837,41 @@ EOF
   sudo chown root:"${USER}" "$env_file"
   sudo chmod 0640 "$env_file"
 
-  # Step 3b: store the weyland PAT so this minion can update its own
-  # bootstrap. The value comes from $WEYLAND_PAT (empty unless the operator
-  # exported it) — it is deliberately NOT committed to the weyland repo.
-  # An existing file is preserved (never clobber a PAT already on the Pi).
+  # Step 3b: provision the weyland PAT so this minion can update its own
+  # bootstrap and read the secrets vault. The operator never types it: it lives
+  # in a PRIVATE gist on Julian's GitHub account and is fetched through the gh
+  # session authenticated in phase_github_auth. Precedence: a PAT already on
+  # this Pi > a $WEYLAND_PAT env override > the gist.
   #
-  # SECURITY: this PAT is permanent and shared across all minions. Do not
-  # revoke it unless you are rotating every minion.
-  local weyland_env="${env_dir}/weyland.env"
-  if [ ! -f "$weyland_env" ]; then
-    printf 'WEYLAND_PAT=%s\n' "${WEYLAND_PAT:-}" | sudo tee "$weyland_env" >/dev/null
-    sudo chmod 0640 "$weyland_env"
-    if [ -n "${WEYLAND_PAT:-}" ]; then
-      log "stored weyland PAT at ${weyland_env}"
-    else
-      log "created ${weyland_env} (WEYLAND_PAT empty — add it later when ready)"
-    fi
+  # SECURITY: this PAT is permanent and shared across all minions. Stored at
+  # ${env_dir}/weyland.env (root:${USER} 0640).
+  local weyland_env="${env_dir}/weyland.env" have_pat="" pat=""
+  if [ -f "$weyland_env" ]; then
+    have_pat="$(sudo grep -E '^WEYLAND_PAT=.+' "$weyland_env" 2>/dev/null | cut -d= -f2- || true)"
+  fi
+  if [ -n "$have_pat" ]; then
+    log "weyland PAT already present at ${weyland_env}; preserving"
   else
-    log "weyland.env already present at ${weyland_env}; preserving"
+    pat="${WEYLAND_PAT:-}"
+    if [ -z "$pat" ]; then
+      log "fetching weyland PAT from your private gist (via gh)…"
+      pat="$(fetch_weyland_pat_from_gist || true)"
+    fi
+    if [ -n "$pat" ]; then
+      printf 'WEYLAND_PAT=%s\n' "$pat" | sudo tee "$weyland_env" >/dev/null
+      sudo chown root:"${USER}" "$weyland_env"; sudo chmod 0640 "$weyland_env"
+      log "weyland PAT provisioned to ${weyland_env}"
+    else
+      # Create the slot so the file exists; tell Julian how to enable auto-fetch.
+      printf 'WEYLAND_PAT=\n' | sudo tee "$weyland_env" >/dev/null
+      sudo chown root:"${USER}" "$weyland_env"; sudo chmod 0640 "$weyland_env"
+      warn "weyland PAT not found — ONE-TIME setup needed:"
+      warn "  Create a PRIVATE (secret) gist on your GitHub account with a file"
+      warn "  named 'weyland-pat' whose content is a fine-grained PAT for"
+      warn "  j-burton/weyland + weyland-secrets (Contents: read & write, no"
+      warn "  expiry). New gist: https://gist.github.com/  — then re-run the"
+      warn "  bootstrap. Every future Pi then fetches the PAT automatically."
+    fi
   fi
 
   # Step 4: render systemd unit from template and install.
@@ -958,10 +993,10 @@ phase_summary() {
 
   # Is the weyland PAT present on this Pi yet? (Never print the value.)
   local pat_status
-  if [ -n "${WEYLAND_PAT:-}" ]; then
-    pat_status="seeded from the environment during bootstrap."
+  if sudo grep -qE '^WEYLAND_PAT=.+' /etc/weyland/weyland.env 2>/dev/null; then
+    pat_status="present — fetched from your private gist (or already on this Pi)."
   else
-    pat_status="not set yet — add a fine-grained PAT (j-burton/weyland, Contents read+write, no expiry) when ready."
+    pat_status="NOT set — create a private gist with a 'weyland-pat' file (see below), then re-run; future Pis fetch it automatically."
   fi
 
   cat <<EOF
@@ -1011,9 +1046,10 @@ phase_summary() {
 
     The bearer is hashed on disk; this is your only chance to copy it.
 
-  --- WEYLAND PAT (lets this minion update its own bootstrap) ---
+  --- WEYLAND PAT (lets minions update their own bootstrap + read the vault) ---
 
-    Stored at: /etc/weyland/weyland.env  (key: WEYLAND_PAT)
+    Auto-fetched from a PRIVATE gist on your GitHub account (file: weyland-pat)
+    via your gh sign-in — you never type it. Stored at /etc/weyland/weyland.env.
 
     Status: ${pat_status}
 

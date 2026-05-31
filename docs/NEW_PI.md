@@ -5,19 +5,10 @@ The whole flow, from "I have a fresh Pi" to "I'm talking to it via Claude."
 ## Prerequisites
 
 - A Raspberry Pi running fresh Raspberry Pi OS (or another Debian-family
-  Linux).
-- Network connected (wired or wifi configured during imaging).
-- An SSH connection from your laptop into the Pi.
-- **The weyland PAT exported** in that SSH session before you run the
-  one-liner. It's a fine-grained PAT with Contents access to `j-burton/weyland`
-  **and** `j-burton/weyland-secrets`. The bootstrap stores it at
-  `/etc/weyland/weyland.env`; the vault phase uses it to fetch fleet secrets.
-  It is **not** prompted — export it first, or add it later (the wake system's
-  Pushcut secret won't arrive until it's present):
-
-  ```bash
-  export WEYLAND_PAT=github_pat_...
-  ```
+  Linux), networked, with an SSH session into it.
+- **A GitHub account** (Julian's). That's it — you sign in via the browser
+  during the bootstrap; **no tokens to type or remember.** The weyland PAT is
+  fetched automatically from a private gist on your account (see below).
 
 ## The one-liner
 
@@ -26,6 +17,19 @@ Paste this into the Pi's SSH session:
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh)
 ```
+
+### One-time, first Pi ever: the PAT gist
+
+The bootstrap fetches the permanent `WEYLAND_PAT` from a **private gist** on your
+GitHub account — so you never type it. Set this up **once**:
+
+- Create a **secret** gist at <https://gist.github.com/> with a file named
+  **`weyland-pat`** whose content is a fine-grained PAT for `j-burton/weyland`
+  **and** `j-burton/weyland-secrets` (Contents: read & write, no expiry).
+
+Every bootstrap after that — on this and all future Pis — fetches it
+automatically via your GitHub sign-in. If the gist doesn't exist yet, the
+bootstrap prints exactly these instructions and continues; create it and re-run.
 
 ## What happens next
 
