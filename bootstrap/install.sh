@@ -910,6 +910,7 @@ EOF
 phase_vault() {
   log "Phase: vault consultation"
 
+  load_state   # for PI_DIR (per-Pi repo path)
   local pat tmp secrets_file
   pat="$(sudo grep -E '^WEYLAND_PAT=' /etc/weyland/weyland.env 2>/dev/null | cut -d= -f2- || true)"
   if [ -z "$pat" ]; then
@@ -947,6 +948,23 @@ phase_vault() {
       echo "PUSHCUT_WEBHOOK_SECRET=${PUSHCUT_WEBHOOK_SECRET}"
     } | sudo tee /etc/weyland/pushcut.env >/dev/null
     sudo chmod 0644 /etc/weyland/pushcut.env
+  fi
+
+  # Sync the fleet map (FLEET.md) into the per-Pi repo so a Claude operating
+  # this minion has it locally. Best-effort and non-fatal; commit only if it
+  # changed. (Non-secret reference; per-Pi repos are private.)
+  if [ -f "${tmp}/FLEET.md" ] && [ -n "${PI_DIR:-}" ] && [ -d "${PI_DIR}/.git" ]; then
+    if ! cmp -s "${tmp}/FLEET.md" "${PI_DIR}/FLEET.md" 2>/dev/null; then
+      cp "${tmp}/FLEET.md" "${PI_DIR}/FLEET.md"
+      if git -C "$PI_DIR" add FLEET.md \
+         && git -C "$PI_DIR" -c user.email=weyland@localhost -c user.name=weyland \
+              commit -q -m "docs: sync FLEET.md from vault" \
+         && git -C "$PI_DIR" push -q 2>/dev/null; then
+        log "FLEET.md synced to per-Pi repo"
+      else
+        warn "FLEET.md copied to ${PI_DIR} but commit/push skipped"
+      fi
+    fi
   fi
 
   rm -rf "$tmp"
