@@ -72,13 +72,15 @@ When the bootstrap finishes:
 ## Repo layout
 
 - `bootstrap/install.sh` — the one-liner. 12 phases, each idempotent.
-- `connector/` — the Python MCP service that runs on each Pi.
+- `connector/` — the Python MCP service that runs on each Pi
+  (`connector/README.md` documents its verbs, config vars, and auth).
 - `connector/scripts/` — the wake system (`cc-notify` hook +
   `cc-tmux-watcher` daemon, `install-wake.sh` installer).
 - `connector/systemd/` — systemd unit templates.
 - `templates/` — files seeded into each per-Pi repo at bootstrap.
 - `docs/` — design rationale (`DESIGN.md`), operating notes
-  (`OPERATING.md`), the full new-Pi walkthrough (`NEW_PI.md`).
+  (`OPERATING.md`), the new-Pi walkthrough (`NEW_PI.md`), the PC wake-listener
+  setup (`PC_WAKE.md`) and its AutoHotkey script (`pc-wake-listener.ahk`).
 
 ## When something breaks
 

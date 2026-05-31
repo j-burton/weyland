@@ -90,7 +90,36 @@ wake system mirrors Atlas's PC channel, with phone paging as the backstop:
   chat-Claude); only the final shot also Pushcuts Julian's phone — by then
   chat-Claude is unreachable and a human must step in.
 
-The PC end is a small AutoHotkey listener (`docs/cc-wake-v2-FRESH.ahk`) on
+The PC end is a small AutoHotkey listener (`docs/pc-wake-listener.ahk`) on
 port 7777, gated by a shared `X-Wake-Token`. The minion's PC hostname and
 token are set during the bootstrap identity phase; leave them blank to fall
-back to Pushcut-only.
+back to Pushcut-only. Setup guide: `docs/PC_WAKE.md`.
+
+## Why OAuth 2.1 + a consent form (not a raw bearer)
+
+Claude Desktop's connector flow speaks OAuth 2.1 and aborts the connect if
+the server doesn't advertise a registration endpoint, so a bare bearer header
+isn't an option. The connector runs as a public client (PKCE, dynamic client
+registration); the actual gate is the per-Pi bearer token, pasted **once**
+into the `/weyland-consent` form on first connect and checked against
+`WEYLAND_BEARER_TOKEN_HASH`. The granted client token is persisted
+(`WEYLAND_TOKEN_STORE`) so it survives connector restarts — Julian pastes the
+bearer exactly once per Pi.
+
+## Why a secrets vault
+
+Fleet-wide secrets (the Pushcut webhook, etc.) can't live in the public
+weyland repo, and prompting for each one on every minion is friction that
+drifts out of sync. Instead they live in one private repo,
+`j-burton/weyland-secrets`, fetched at bootstrap via the same PAT the minion
+already holds. Adding a secret = one commit there; every future minion gets
+it automatically. The fetch is non-fatal — an unreachable vault just leaves
+that capability inert until the secret is present.
+
+## Why minions self-document
+
+A fresh minion knows more about itself than the operator does. Rather than
+hand-writing per-Pi docs, the bootstrap's self-documentation phase hands CC a
+task to inspect its own hardware, software, and purpose and fill in
+`HARDWARE.md` / `CURRENT_STATE.md` / `MODULES.md` / `README.md` in its repo —
+so the per-Pi repo is already oriented before the first human chat.
