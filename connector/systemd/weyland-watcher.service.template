@@ -7,6 +7,9 @@ Type=simple
 User={{ USER }}
 Environment=WEYLAND_PI_NAME={{ PI_NAME }}
 Environment=CC_WATCHER_PANE={{ PI_NAME }}:0
+# Start 30s after CC so the watcher doesn't fire phantom pings on Pi boot
+# (the tmux pane isn't idle yet while CC is still coming up).
+ExecStartPre=/bin/sleep 30
 ExecStart=/usr/local/bin/cc-tmux-watcher
 Restart=on-failure
 RestartSec=5
