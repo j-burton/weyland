@@ -715,10 +715,15 @@ Description=Weyland Claude Code tmux session (${PI_NAME})
 After=network-online.target
 
 [Service]
-Type=forking
+Type=oneshot
+RemainAfterExit=yes
 User=${USER}
-ExecStart=/usr/bin/tmux new-session -d -s ${PI_NAME} -c ${PI_DIR:-$HOME} 'claude --dangerously-skip-permissions'
-ExecStop=/usr/bin/tmux kill-session -t ${PI_NAME}
+# Create the CC tmux session only if it isn't already running. A service
+# (re)start must never recreate — and so never clobber — a live session.
+ExecStart=/bin/sh -c '/usr/bin/tmux has-session -t ${PI_NAME} 2>/dev/null || /usr/bin/tmux new-session -d -s ${PI_NAME} -c "${PI_DIR:-$HOME}" "claude --dangerously-skip-permissions"'
+# No ExecStop: stopping or restarting this service must NOT kill the tmux
+# session — that would terminate the running Claude Code. The session is
+# long-lived and intentionally outlives the service.
 Restart=on-failure
 RestartSec=5
 
