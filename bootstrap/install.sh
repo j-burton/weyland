@@ -353,8 +353,7 @@ phase_packages() {
   sudo apt-get update -qq
   sudo apt-get install -y -qq \
     git curl tmux ca-certificates gnupg lsb-release \
-    python3 python3-venv python3-pip \
-    age
+    python3 python3-venv python3-pip
 
   # GitHub CLI (gh) — official apt repo.
   if ! command -v gh >/dev/null 2>&1; then
@@ -861,54 +860,25 @@ EOF
 }
 
 # ----------------------------------------------------------------------
-# Phase — Vault (fleet secret distribution, age-encrypted)
+# Phase — Vault (fleet secret distribution)
 # ----------------------------------------------------------------------
 # Fetch fleet-wide secrets from the private j-burton/weyland-secrets repo
 # ("the vault") and write them to their destination files. Runs after the
-# connector phase, so WEYLAND_PAT is already stored at /etc/weyland/weyland.env.
+# connector phase, so the WEYLAND_PAT is already stored at
+# /etc/weyland/weyland.env.
 #
-# The vault is ENCRYPTED AT REST with age: the repo holds only ciphertext
-# (secrets.env.age). Decrypting needs the age PRIVATE key, provisioned
-# OUT-OF-BAND — via $WEYLAND_VAULT_AGE_KEY or an interactive paste — and written
-# to /etc/weyland/vault-age.key. It is deliberately NOT fetchable from git/the
-# PAT: if it were, a stolen PAT would unlock the ciphertext too, defeating the
-# encryption. The operator holds the one private key (password manager) and
-# supplies it at provisioning, like WEYLAND_PAT.
-#
-# Non-fatal by design: missing PAT/key/age-tool, an unreachable vault, or a
-# failed decrypt all warn and continue — the wake system stays inert until the
-# secret is present.
+# Secrets NEVER live in the public weyland repo; the vault is the single
+# private source of truth, and the repo being private + PAT-gated is the
+# security boundary (plaintext, no separate encryption to manage). Non-fatal by
+# design: if the PAT is missing or the vault is unreachable, we warn and
+# continue — the wake system just stays inert until a secret is present.
 phase_vault() {
   log "Phase: vault consultation"
 
-  local pat tmp enc dec age_key="/etc/weyland/vault-age.key"
-
+  local pat tmp secrets_file
   pat="$(sudo grep -E '^WEYLAND_PAT=' /etc/weyland/weyland.env 2>/dev/null | cut -d= -f2- || true)"
   if [ -z "$pat" ]; then
     warn "vault skipped — no WEYLAND_PAT on this Pi; fleet secrets not fetched"
-    return 0
-  fi
-
-  # Provision the age private key if absent (out-of-band only — never git/PAT).
-  if ! sudo test -s "$age_key"; then
-    if [ -n "${WEYLAND_VAULT_AGE_KEY:-}" ]; then
-      printf '%s\n' "$WEYLAND_VAULT_AGE_KEY" | sudo tee "$age_key" >/dev/null
-      log "vault age key provisioned from \$WEYLAND_VAULT_AGE_KEY"
-    elif [ -t 0 ]; then
-      log "Paste the vault age PRIVATE key (AGE-SECRET-KEY-1...), then Ctrl-D:"
-      sudo tee "$age_key" >/dev/null
-    fi
-    if sudo test -s "$age_key"; then
-      sudo chown root:admin "$age_key"; sudo chmod 0640 "$age_key"
-    fi
-  fi
-  if ! sudo test -s "$age_key"; then
-    warn "vault skipped — no age key at ${age_key} (export WEYLAND_VAULT_AGE_KEY); secrets stay inert"
-    return 0
-  fi
-
-  if ! command -v age >/dev/null 2>&1; then
-    warn "vault skipped — 'age' not installed (phase_packages should have added it)"
     return 0
   fi
 
@@ -921,41 +891,31 @@ phase_vault() {
     return 0
   fi
 
-  enc="${tmp}/secrets.env.age"
-  if [ ! -f "$enc" ]; then
-    warn "vault has no secrets.env.age — nothing written"
+  secrets_file="${tmp}/secrets.env"
+  if [ ! -f "$secrets_file" ]; then
+    warn "vault has no secrets.env — nothing written"
     rm -rf "$tmp"
     return 0
   fi
 
-  # Decrypt to a 0600 temp file (umask in a subshell). age reads the group-
-  # readable key as the service user.
-  dec="${tmp}/secrets.env"
-  if ! ( umask 077; age -d -i "$age_key" -o "$dec" "$enc" 2>/dev/null ); then
-    warn "vault decrypt failed — wrong age key? secrets not written"
-    rm -rf "$tmp"
-    return 0
-  fi
-
-  # Source the decrypted secrets (trusted private vault). Relax errexit so a
-  # single malformed line can't abort the whole bootstrap.
+  # Source the vault (trusted private repo). Relax errexit around the source so
+  # a single malformed line can't abort the whole bootstrap.
   # shellcheck disable=SC1090
-  set +e; set -a; . "$dec"; set +a; set -e
+  set +e; set -a; . "$secrets_file"; set +a; set -e
 
-  # Map known secrets to destinations. Empty/unknown keys are skipped; adding a
-  # new destination requires a mapping here.
+  # Map each known secret to its destination file. Empty/unknown keys are
+  # skipped; adding a new destination requires a mapping here.
   if [ -n "${PUSHCUT_WEBHOOK_SECRET:-}" ]; then
     {
       echo "# Pushcut webhook secret — written by the bootstrap vault phase from"
-      echo "# the private weyland-secrets vault. Never committed to the public repo."
+      echo "# the private weyland-secrets repo. Never committed to the public repo."
       echo "PUSHCUT_WEBHOOK_SECRET=${PUSHCUT_WEBHOOK_SECRET}"
     } | sudo tee /etc/weyland/pushcut.env >/dev/null
     sudo chmod 0644 /etc/weyland/pushcut.env
   fi
 
-  # Scrub the decrypted plaintext.
   rm -rf "$tmp"
-  log "vault consulted — secrets decrypted and written"
+  log "vault consulted — secrets written"
 }
 
 # ----------------------------------------------------------------------

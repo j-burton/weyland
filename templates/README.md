@@ -301,6 +301,17 @@ see." A direct pane read (`tmux_capture_pane`) is the only reliable
 end-of-session check: confirm CC finished, surface anything it's waiting on,
 and pick up any parked questions before you close out.
 
+### Standing rule: keep docs in sync, proactively
+
+When you change how this Pi (or the fleet) works — a service, a config, a
+bootstrap step, the wake system, the vault — **update the docs that describe it
+in the SAME piece of work, without being asked.** That means this Pi's
+`CURRENT_STATE.md` / `MODULES.md` / `README.md`, and weyland itself (incl.
+`docs/` and `templates/README.md`) if you changed bootstrap or connector
+behaviour. Stale docs silently mislead the next chat-Claude, so treat "docs
+match reality" as part of *done*, not a follow-up. If you can't update a doc
+now, note the drift in a `handoffs/` doc so it isn't lost.
+
 ## Escalation
 
 If you need Julian's judgment and he isn't responding in chat, fire a

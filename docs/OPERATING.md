@@ -94,6 +94,16 @@ phase via the PAT. Operators don't manage them per-Pi — adding a secret to
 that repo's `secrets.env` distributes it to every future minion
 automatically, and rotating one is a single edit there.
 
+## Keep docs in sync, proactively
+
+Any change to how weyland works — a bootstrap phase, a connector verb, the wake
+system, the vault — **updates the docs that describe it in the same change.**
+Don't wait to be asked and don't leave it for "later": `NEW_PI.md`, `DESIGN.md`,
+this file, `connector/README.md`, and `templates/README.md` must match the code
+that shipped. Stale docs mislead the next Claude; "docs updated" is part of
+*done*. If a doc update genuinely can't happen now, record the drift in a
+`handoffs/` doc so it isn't lost.
+
 ## Don't pre-empt Julian's stopping decisions
 
 Never tell Julian to stop, pause, or take a break. He decides when
