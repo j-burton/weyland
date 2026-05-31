@@ -346,6 +346,15 @@ the improvement.
 
 Weyland's source: https://github.com/j-burton/weyland
 
+## The vault (fleet secrets)
+
+Fleet secrets (Pushcut webhook, etc.) live in a private `weyland-secrets`
+repo, fetched during bootstrap via the PAT — never in the public weyland
+repo. To add a new fleet-wide secret, add it to that repo's `secrets.env`
+(one `KEY=value` per line); all future minions receive it automatically on
+their next bootstrap. To rotate one, update the value there and re-run the
+bootstrap's vault step (or `install-wake.sh`) on each live minion.
+
 ## When in doubt
 
 Read the three orientation files again. Then ask Julian what he wants.

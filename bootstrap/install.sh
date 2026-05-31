@@ -29,13 +29,6 @@ STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 # later.
 WEYLAND_PAT="${WEYLAND_PAT:-}"
 
-# Pushcut webhook secret — the always-on phone-notification channel for the
-# wake system. Like the PAT, it is NEVER committed to this repo: it is prompted
-# during phase_identity (or seed it by exporting PUSHCUT_WEBHOOK_SECRET before
-# running), saved to per-Pi state, and written to /etc/weyland/pushcut.env by
-# install-wake.sh.
-PUSHCUT_WEBHOOK_SECRET="${PUSHCUT_WEBHOOK_SECRET:-}"
-
 # Where to find the weyland repo on disk. Normally $0 resolves to a
 # real path (script was downloaded + run). When piped via
 # `bash <(curl ...)`, $0 is /dev/fd/<N> so we have to clone weyland
@@ -80,6 +73,7 @@ PHASES=(
   "tunnel:Cloudflare tunnel"
   "claude_code:Claude Code + wake"
   "connector:Weyland MCP connector"
+  "vault:Vault consultation"
   "selfdoc:Self-documentation"
   "summary:Summary"
 )
@@ -342,24 +336,9 @@ phase_identity() {
     log "PC wake channel skipped (Pushcut-only)"
   fi
 
-  # Pushcut webhook secret — the always-on phone-notification channel. Prompted
-  # here (or pre-seeded via $PUSHCUT_WEBHOOK_SECRET); never committed to the
-  # repo. Saved to state and written to /etc/weyland/pushcut.env by
-  # install-wake.sh. Press Enter to keep a seeded value or to skip.
-  local pushcut_secret pushcut_prompt
-  if [ -n "${PUSHCUT_WEBHOOK_SECRET:-}" ]; then
-    pushcut_prompt="Pushcut webhook secret [Enter = keep seeded value]: "
-  else
-    pushcut_prompt="Pushcut webhook secret (blank to skip phone notifications): "
-  fi
-  read -r -p "$pushcut_prompt" pushcut_secret
-  PUSHCUT_WEBHOOK_SECRET="${pushcut_secret:-${PUSHCUT_WEBHOOK_SECRET:-}}"
-  save_state PUSHCUT_WEBHOOK_SECRET "$PUSHCUT_WEBHOOK_SECRET"
-  if [ -n "$PUSHCUT_WEBHOOK_SECRET" ]; then
-    log "Pushcut webhook channel configured"
-  else
-    log "Pushcut webhook secret blank — phone notifications disabled until set"
-  fi
+  # Note: the Pushcut webhook secret is NOT prompted here — it is distributed
+  # fleet-wide via the vault (phase_vault) from the private weyland-secrets
+  # repo. The operator only needs to provide the WEYLAND_PAT.
 
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
@@ -881,6 +860,64 @@ EOF
 }
 
 # ----------------------------------------------------------------------
+# Phase — Vault (fleet secret distribution)
+# ----------------------------------------------------------------------
+# Fetch fleet-wide secrets from the private j-burton/weyland-secrets repo
+# ("the vault") and write them to their destination files. Runs after the
+# connector phase, so the WEYLAND_PAT is already stored at
+# /etc/weyland/weyland.env.
+#
+# Secrets NEVER live in the public weyland repo; the vault is the single
+# private source of truth, gated by the WEYLAND_PAT. Non-fatal by design: if
+# the PAT is missing or the vault is unreachable, we warn and continue — the
+# wake system just stays inert until a secret is present.
+phase_vault() {
+  log "Phase: vault consultation"
+
+  local pat tmp secrets_file
+  pat="$(sudo grep -E '^WEYLAND_PAT=' /etc/weyland/weyland.env 2>/dev/null | cut -d= -f2- || true)"
+  if [ -z "$pat" ]; then
+    warn "vault skipped — no WEYLAND_PAT on this Pi; fleet secrets not fetched"
+    return 0
+  fi
+
+  tmp="$(mktemp -d)"
+  # Stderr → /dev/null so the PAT embedded in the clone URL never lands in logs.
+  if ! git clone --quiet --depth 1 \
+        "https://${pat}@github.com/${OWNER}/weyland-secrets.git" "$tmp" 2>/dev/null; then
+    warn "vault unreachable (clone failed) — fleet secrets not fetched; wake system inert until present"
+    rm -rf "$tmp"
+    return 0
+  fi
+
+  secrets_file="${tmp}/secrets.env"
+  if [ ! -f "$secrets_file" ]; then
+    warn "vault has no secrets.env — nothing written"
+    rm -rf "$tmp"
+    return 0
+  fi
+
+  # Source the vault (trusted private repo). Relax errexit around the source so
+  # a single malformed line can't abort the whole bootstrap.
+  # shellcheck disable=SC1090
+  set +e; set -a; . "$secrets_file"; set +a; set -e
+
+  # Map each known secret to its destination file. Add new mappings here as the
+  # vault grows. Only write when the vault actually carries a value.
+  if [ -n "${PUSHCUT_WEBHOOK_SECRET:-}" ]; then
+    {
+      echo "# Pushcut webhook secret — written by the bootstrap vault phase from"
+      echo "# the private weyland-secrets repo. Never committed to the public repo."
+      echo "PUSHCUT_WEBHOOK_SECRET=${PUSHCUT_WEBHOOK_SECRET}"
+    } | sudo tee /etc/weyland/pushcut.env >/dev/null
+    sudo chmod 0644 /etc/weyland/pushcut.env
+  fi
+
+  rm -rf "$tmp"
+  log "vault consulted — secrets written"
+}
+
+# ----------------------------------------------------------------------
 # Phase 8 — Self-documentation
 # ----------------------------------------------------------------------
 phase_selfdoc() {
@@ -1021,7 +1058,9 @@ main() {
   phase_claude_code
   render_checklist claude_code done; render_checklist connector running
   phase_connector
-  render_checklist connector done; render_checklist selfdoc running
+  render_checklist connector done; render_checklist vault running
+  phase_vault
+  render_checklist vault done; render_checklist selfdoc running
   phase_selfdoc
   render_checklist selfdoc done; render_checklist summary done
   # Restore the terminal before printing the summary so it lands on a clean,
