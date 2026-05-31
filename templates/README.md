@@ -104,17 +104,18 @@ These four rules are identical on **every** minion in the fleet (same as
 Argos). They are not optional and not situational. Get them wrong and CC
 runs unwatched, or Julian is left in the dark.
 
-1. **Escalation ladder.** When CC stalls, the watcher fires a ladder of
-   **escalating pings to you (chat-Claude)**. If you still haven't acted,
-   the **final shot pings you AND fires a simultaneous Pushcut to Julian** —
-   meaning *you are unreachable* and Julian now has to intervene manually.
-   Don't let it get that far: act on the first ping. (Exact shot timings are
-   in the WAKE SYSTEM tool section below.)
+1. **Escalation ladder.** When CC stalls, the watcher fires a 5-shot ladder.
+   **Shots 1-4 ping only you (chat-Claude)** via the PC — Julian is NOT
+   touched. **Only the 5th and final shot also Pushcuts Julian**, because by
+   then you are unreachable and he has to intervene manually. Don't let it
+   get that far: act on the first ping. (Exact shot timings are in the WAKE
+   SYSTEM tool section below.)
 
 2. **Task done → read and report.** The moment CC finishes any task, you
-   get a ping. **Immediately read the pane and report the result to
-   Julian.** A finished task that nobody relays is a task that didn't
-   happen.
+   get a PC ping (PC-only — Julian is not paged). **Immediately read the pane
+   and report the result to Julian.** You decide whether the result warrants
+   Pushcutting him (see rule 3); the wake system never pages him for you on a
+   task-done. A finished task that nobody relays is a task that didn't happen.
 
 3. **Need Julian on a non-technical call → Pushcut him directly.** Any
    time you need Julian's judgement on a non-technical decision (aviation,
@@ -175,16 +176,24 @@ key. Hand me one task; let me run it; read back the result.
 
 ### 3. WAKE SYSTEM — gets attention when CC needs it
 
-A watcher + `cc-notify` sit alongside CC. When CC finishes a task it
-pings **you** (chat-Claude) with `[HAL 9000 STANDING BY]` so you know
-to come read the result. If CC stalls (e.g. at a permission prompt) the
-watcher fires a ladder of escalating shots — the early shots ping **you**
-(chat-Claude); the final shot also fires a **Pushcut to Julian's phone**
-(you're unreachable):
+A watcher + `cc-notify` sit alongside CC. Both wake **you** (chat-Claude)
+by popping the Claude window on Julian's PC — neither pages Julian directly
+except the one case below.
 
-- Shots fire at these gaps after the previous one: **10s → 60s → 60s →
-  480s → 600s**. The early shots ping you; the final shot also Pushcuts
-  Julian. After the last shot it locks until clear.
+- **`cc-notify`** fires when CC finishes a task / goes idle at turn-end:
+  one PC ping with `[HAL 9000 STANDING BY]`. **PC-only — it never Pushcuts
+  Julian.** You come read the pane and decide if he needs paging.
+- **The watcher** detects a sustained idle state (this CC runs with
+  `--dangerously-skip-permissions`, so it shows `⏵⏵ bypass permissions`
+  when idle and `esc to interrupt` while working) and fires a 5-shot ladder
+  at these gaps after the previous shot: **10s → 60s → 60s → 480s → 600s**.
+  **Shots 1-4 are PC-only (chat-Claude). Only shot 5 also fires a Pushcut to
+  Julian's phone** — by then you're unreachable. After shot 5 it locks until
+  CC leaves the idle state.
+
+So the wake system pages Julian in exactly one situation: you ignored four
+escalating PC pings over ~20 minutes. Every other path to Julian's phone is
+a deliberate Pushcut **you** fire (see Escalation, below).
 
 Controlled by `/etc/weyland/wake-mode`: `on` (default) = fires, `off`
 = silent. Flip it via the connector. Default ON when uncertain — a

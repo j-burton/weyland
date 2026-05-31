@@ -7,9 +7,10 @@ bypass-permissions indicator ("⏵⏵ bypass permissions"); while working it
 shows "esc to interrupt". The watcher treats a sustained idle state as
 "CC is waiting / may be stuck" and escalates.
 
-Each shot fires BOTH the PC AHK channel (port 7777, configured in
-/etc/weyland/wake.env) and Pushcut to Julian's phone. The 5-shot ladder,
-by gap from the previous shot:
+Shots 1-4 nudge chat-Claude via the PC AHK channel (port 7777, configured
+in /etc/weyland/wake.env) ONLY. The final shot (5) fires the PC channel AND
+Pushcuts Julian — by then chat-Claude is unreachable. The 5-shot ladder, by
+gap from the previous shot:
 
   Shot 1 (10s)  Shot 2 (+60s)  Shot 3 (+60s)  Shot 4 (+480s)  Shot 5 (+600s)
 
@@ -211,9 +212,11 @@ def fire(block, shot):
     if mode == "off":
         log(f"fire-skipped mode=off shot={shot}")
         return mode
-    # PC AHK channel first, then Pushcut — both fire on every shot.
+    # Shots 1..4 nudge chat-Claude via the PC AHK channel only. Julian is
+    # Pushcut only on the FINAL shot — once chat-Claude is unreachable.
     fire_pc(shot, summary)
-    fire_pushcut(shot, summary)
+    if shot >= MAX_FIRES:
+        fire_pushcut(shot, summary)
     return mode
 
 

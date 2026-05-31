@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""cc-notify — Claude Code Notification hook → Pushcut wake.
+"""cc-notify — Claude Code Notification hook → PC AHK wake.
 
 Registered as a `Notification` hook in ~/.claude/settings.json. When CC
 raises a notification (idle at turn-end), this reads the hook JSON on
-stdin, builds a one-line summary, checks the wake-mode flag, and fires
-a Pushcut to Julian's phone.
+stdin, builds a one-line summary, checks the wake-mode flag, and pings the
+PC AHK channel (port 7777, configured in /etc/weyland/wake.env) so the
+Claude window pops on Julian's PC.
 
-Fires BOTH the PC AHK channel (port 7777, configured in
-/etc/weyland/wake.env) and Pushcut to Julian's phone. This is the
-idle/standing-by ping, so it maps to AHK shot 1 ("[HAL 9000 STANDING BY]").
+PC-ONLY by design: this is the idle/standing-by ping (AHK shot 1,
+"[HAL 9000 STANDING BY]"). It does NOT Pushcut Julian — chat-Claude reads
+the pane and decides whether Julian needs to be paged.
 
 Fast and non-blocking: always exits 0 so it can never block CC.
 """
@@ -19,11 +20,9 @@ import time
 import urllib.request
 import urllib.error
 
-PUSHCUT_ENV = "/etc/weyland/pushcut.env"
 WAKE_ENV = "/etc/weyland/wake.env"
 WAKE_MODE = "/etc/weyland/wake-mode"
 LOG = "/var/log/weyland-wake.log"
-NOTIF = "CC_Needs_Julian"
 TIMEOUT = 4
 
 # Only act on these notification_type values. Permission prompts are
@@ -83,31 +82,6 @@ def fire_pc(summary, pi_name, shot=1):
         return "0", type(e).__name__
 
 
-def fire_pushcut(summary, pi_name):
-    secret = _read_env_value(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
-    if not secret:
-        return "0", "no-secret"
-    url = f"https://api.pushcut.io/{secret}/notifications/{NOTIF}"
-    text = f"[{pi_name}] {summary}"
-    body = json.dumps({"text": text[:200]}).encode()
-    req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            return str(resp.status), ""
-    except urllib.error.HTTPError as e:
-        return str(e.code), ""
-    except Exception as e:
-        return "0", type(e).__name__
-
-
-def fire(summary, pi_name):
-    """PC AHK channel first, then Pushcut — both fire on the idle ping."""
-    pc_code, pc_err = fire_pc(summary, pi_name, shot=1)
-    pushcut_code, pushcut_err = fire_pushcut(summary, pi_name)
-    return pc_code, pc_err, pushcut_code, pushcut_err
-
-
 def main():
     raw = sys.stdin.read()
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -136,10 +110,9 @@ def main():
             f"summary={summary!r}")
         return 0
 
-    pc_code, pc_err, http_code, err = fire(summary, pi_name)
+    pc_code, pc_err = fire_pc(summary, pi_name, shot=1)
     log(f"{ts}  pi={pi_name}  mode=on  notif=fired  "
-        f"pc_http={pc_code}  pc_err={pc_err}  "
-        f"http={http_code}  err={err}  summary={summary!r}")
+        f"pc_http={pc_code}  pc_err={pc_err}  summary={summary!r}")
     return 0
 
 
