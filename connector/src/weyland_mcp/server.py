@@ -26,6 +26,7 @@ from .tools import net as net_tools
 from .tools import shell as shell_tools
 from .tools import systemd as systemd_tools
 from .tools import tmux as tmux_tools
+from .tools import wake as wake_tools
 
 
 def _transport_security(cfg: Config) -> TransportSecuritySettings:
@@ -123,6 +124,7 @@ def build_server(cfg: Config) -> FastMCP:
     systemd_tools.register(app, cfg)
     net_tools.register(app, cfg)
     github_tools.register(app, cfg)
+    wake_tools.register(app, cfg)
 
     _force_tools_changed(app)
 

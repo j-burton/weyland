@@ -791,13 +791,18 @@ WEYLAND_PI_DIR=${PI_DIR}
 WEYLAND_OAUTH_CLIENT_ID=weyland-mcp-claude-ai
 WEYLAND_TOKEN_STORE=/var/lib/weyland-mcp/tokens.json
 EOF
-    sudo chmod 0640 "$env_file"
-
     save_state WEYLAND_BEARER_TOKEN "$token"
     log "generated bearer token (preview in summary)"
   else
     log "env file already present at ${env_file}; preserving existing token"
   fi
+
+  # The connector runs as ${USER}, not root, so it must be able to READ its
+  # env file. root-owned + admin-group + 0640 keeps the bearer hash off the
+  # world while letting the service user read it. Applied every run so an
+  # already-installed Pi with a root:root 0640 file is repaired.
+  sudo chown root:"${USER}" "$env_file"
+  sudo chmod 0640 "$env_file"
 
   # Step 3b: store the weyland PAT so this minion can update its own
   # bootstrap. The value comes from $WEYLAND_PAT (empty unless the operator

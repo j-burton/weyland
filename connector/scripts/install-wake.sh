@@ -17,8 +17,20 @@ sudo install -m 0755 "${SCRIPT_DIR}/cc-tmux-watcher"  /usr/local/bin/cc-tmux-wat
 sudo mkdir -p /etc/weyland
 if [ ! -f /etc/weyland/wake-mode ]; then
   echo on | sudo tee /etc/weyland/wake-mode >/dev/null
-  sudo chmod 0644 /etc/weyland/wake-mode
 fi
+# Always (re)assert mode: world-readable so the watcher can poll it.
+sudo chmod 0644 /etc/weyland/wake-mode
+
+# 2b. Runtime state dir + log file must be writable by the service user — the
+#     watcher runs as ${USER}, not root. /var/lib/weyland is root-created by
+#     the bootstrap and /var/log is root-owned, so without fixing ownership
+#     here the watcher fails SILENTLY (can't write its state JSON or its log).
+sudo mkdir -p /var/lib/weyland
+sudo chown "${USER}:${USER}" /var/lib/weyland
+sudo chmod 0755 /var/lib/weyland
+sudo touch /var/log/weyland-wake.log
+sudo chown "${USER}:${USER}" /var/log/weyland-wake.log
+sudo chmod 0644 /var/log/weyland-wake.log
 
 # 3. Pushcut env file. Reuses Atlas's webhook secret — same notification on
 #    Julian's phone fires for all minions, distinguished by [pi_name] prefix
@@ -30,8 +42,9 @@ if [ ! -f /etc/weyland/pushcut.env ]; then
 # prefix in the alert text.
 PUSHCUT_WEBHOOK_SECRET=Uz128efYNtFwdgoGYBTuz
 EOF
-  sudo chmod 0640 /etc/weyland/pushcut.env
 fi
+# Readable by the service user (cc-notify / watcher run as ${USER}, not root).
+sudo chmod 0644 /etc/weyland/pushcut.env
 
 # 3b. PC AHK wake channel config → /etc/weyland/wake.env. The wake scripts
 #     POST here with an X-Wake-Token header so the AHK listener on Julian's
@@ -53,8 +66,9 @@ if [ ! -f /etc/weyland/wake.env ]; then
     echo "PC_WAKE_URL=${PC_WAKE_URL}"
     echo "WAKE_TOKEN=${WAKE_TOKEN}"
   } | sudo tee /etc/weyland/wake.env >/dev/null
-  sudo chmod 0640 /etc/weyland/wake.env
 fi
+# Readable by the service user (cc-notify / watcher run as ${USER}, not root).
+sudo chmod 0644 /etc/weyland/wake.env
 
 # 4. Register cc-notify as CC's Notification hook.
 SETTINGS_DIR="${HOME}/.claude"

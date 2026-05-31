@@ -132,6 +132,29 @@ The mechanics behind these rules — the `[HAL 9000 STANDING BY]` ping,
 timings, `wake-mode`, and re-arming after each dispatch — are in the WAKE
 SYSTEM tool section below.
 
+## Session start — self-test
+
+Run this the moment a session opens, before any real work. It proves the
+whole wake loop is live end-to-end. Do it **every** session.
+
+1. **Arm the watcher** — call `restart_wake`; confirm `watcher_alive: true`.
+2. **Send CC a trivial task** — `tmux_send_keys` it to echo the date to a
+   scratch file: `echo $(date) > /tmp/wake-test.txt`.
+3. **Wait for the `[HAL 9000 STANDING BY]` ping.** When CC finishes and goes
+   idle, the wake system should ping you. That ping arriving is the proof the
+   loop works. No ping in ~30s → the wake system is broken; fix it before you
+   trust it for anything real.
+4. **Reset the watcher** — call `restart_wake` again to return to ARMED.
+5. **Hand Julian the read-only attach** — the single copy-paste tmux command
+   (see the standing rule below).
+6. **Confirm the stack is green** and tell Julian in one line:
+   - connector responding (you're using it),
+   - CC running in its tmux session (`tmux_list`),
+   - watcher alive (`restart_wake` → `watcher_alive: true`),
+   - Pushcut reachable — fire one "session started" notification to Julian's
+     phone to prove that path end-to-end.
+7. **Ask Julian what we're doing today.**
+
 ## Your tools for driving this Pi
 
 You have THREE distinct tools. Know which is which — they do different
@@ -147,6 +170,7 @@ yourself, right now, without going through anyone:
 - **systemd:** `systemctl_status`, `systemctl_restart`, `install_unit`
 - **git:** `git_status`, `git_log`, `git_pull`, `git_commit_push`
 - **tmux:** `tmux_list`, `tmux_send_keys`, `tmux_capture_pane`
+- **wake:** `restart_wake` (re-arm the watcher between tasks — see below)
 
 It is **default-allow with full sudo** — it does NOT prompt you per
 action. For routine work (reading a file, restarting a unit, checking
@@ -199,10 +223,25 @@ Controlled by `/etc/weyland/wake-mode`: `on` (default) = fires, `off`
 = silent. Flip it via the connector. Default ON when uncertain — a
 stray ping costs far less than CC sitting unnoticed.
 
-**Drill — re-arm after every dispatch.** After you hand CC a task,
-re-arm the wake in the SAME turn: flip mode `off` then `on`. Mechanical,
-not discretionary. The cost of an extra cycle is zero; the cost of a
-missed re-arm is silence when something breaks.
+**Three wake states.** Treat the watcher as a small state machine:
+
+- **ARMED** — watcher running, CC idle or not yet started, no shots fired
+  this cycle. The resting state, and the one you want **between tasks**.
+- **ACTIVE** — CC has started a task (`esc to interrupt` visible); the
+  watcher is monitoring and will begin the shot ladder when CC next goes
+  idle. The watcher flips here **on its own** when it sees CC working, then
+  back toward idle when the work finishes.
+- **OFF** — `wake-mode=off`: the watcher is completely silent. Almost never
+  what you want; only for a deliberate quiet period.
+
+Calling **`restart_wake`** (flips `wake-mode` off → on) returns the watcher
+to **ARMED** — the correct state between tasks. It also reports
+`watcher_alive` and the `watcher_pid` so you can confirm it's actually running.
+
+**Drill — re-arm after every dispatch.** After you hand CC a task, re-arm in
+the SAME turn with the `restart_wake` verb. Mechanical, not discretionary.
+The cost of an extra cycle is zero; the cost of a missed re-arm is silence
+when something breaks.
 
 ### Standing rule: offer Julian a read-only window
 
@@ -246,6 +285,14 @@ questions. You decide technical questions yourself.
 
 Also fire Pushcut when you've finished a chunk of work, so Julian
 knows the Pi is at a state he can react to.
+
+**Never block on a Pushcut.** Firing a Pushcut — whether it's a question or
+a task-complete ping — is NOT a stopping point. You do not send it and wait.
+Keep working any part of the task that isn't blocked on Julian's answer, park
+non-blocking questions in a `handoffs/` doc, and stop only when *everything*
+left is blocked on his input. A Pushcut is a note you drop in passing, not a
+barrier you sit behind. (This is the same discipline as the all-nighter model
+below — it applies in every session, not just overnight.)
 
 ## All-nighters — working while Julian sleeps
 
