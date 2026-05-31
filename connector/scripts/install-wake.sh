@@ -6,6 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_NAME="${1:-minion}"
+PC_WAKE_URL="${2:-}"   # AHK listener URL, e.g. http://<pc>:7777 (blank = skip)
+WAKE_TOKEN="${3:-}"    # X-Wake-Token shared with the PC AHK listener
 
 # 1. Install scripts to /usr/local/bin.
 sudo install -m 0755 "${SCRIPT_DIR}/cc-notify"        /usr/local/bin/cc-notify
@@ -29,6 +31,29 @@ if [ ! -f /etc/weyland/pushcut.env ]; then
 PUSHCUT_WEBHOOK_SECRET=Uz128efYNtFwdgoGYBTuz
 EOF
   sudo chmod 0640 /etc/weyland/pushcut.env
+fi
+
+# 3b. PC AHK wake channel config → /etc/weyland/wake.env. The wake scripts
+#     POST here with an X-Wake-Token header so the AHK listener on Julian's
+#     PC pops the Claude window. Values come from args $2/$3 (passed by the
+#     bootstrap) or are prompted when this script is run standalone. These
+#     are per-install secrets — NOT committed to the repo. Blank = skip
+#     (Pushcut-only). If the file already exists, leave it.
+if [ ! -f /etc/weyland/wake.env ]; then
+  if [ -z "$PC_WAKE_URL" ] && [ -t 0 ]; then
+    read -r -p "PC wake URL (AHK listener, e.g. http://<pc-host>:7777 — blank to skip): " PC_WAKE_URL
+  fi
+  if [ -n "$PC_WAKE_URL" ] && [ -z "$WAKE_TOKEN" ] && [ -t 0 ]; then
+    read -r -p "PC wake token (X-Wake-Token): " WAKE_TOKEN
+  fi
+  {
+    echo "# PC AHK wake channel. cc-notify / cc-tmux-watcher POST here with an"
+    echo "# X-Wake-Token header so the AHK listener on Julian's PC pops the"
+    echo "# Claude window. Per-install values — never commit the token."
+    echo "PC_WAKE_URL=${PC_WAKE_URL}"
+    echo "WAKE_TOKEN=${WAKE_TOKEN}"
+  } | sudo tee /etc/weyland/wake.env >/dev/null
+  sudo chmod 0640 /etc/weyland/wake.env
 fi
 
 # 4. Register cc-notify as CC's Notification hook.

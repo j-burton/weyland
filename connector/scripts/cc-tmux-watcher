@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """cc-tmux-watcher: poll CC's tmux pane, detect permission prompts, fire wake.
 
-Ported from Atlas's cc-tmux-watcher with all PC/AHK paths stripped. All
-shots fire Pushcut directly to Julian's phone. The 5-shot HAL ladder is
-collapsed to a simpler 3-shot escalation:
+Ported from Atlas's cc-tmux-watcher. Each shot fires BOTH the PC AHK
+channel (port 7777, configured in /etc/weyland/wake.env) and Pushcut to
+Julian's phone. The 5-shot HAL ladder is collapsed to a simpler 3-shot
+escalation:
 
   Shot 1 (10s)     — "CC waiting"
   Shot 2 (5 min)   — "Still waiting"
@@ -27,6 +28,7 @@ PI_NAME = os.environ.get("WEYLAND_PI_NAME") or "minion"
 PANE = os.environ.get("CC_WATCHER_PANE", f"{PI_NAME}:0")
 MODE_FILE = "/etc/weyland/wake-mode"
 PUSHCUT_ENV = "/etc/weyland/pushcut.env"
+WAKE_ENV = "/etc/weyland/wake.env"
 STATE_FILE = "/var/lib/weyland/tmux-watcher-state.json"
 LOG = "/var/log/weyland-wake.log"
 
@@ -187,12 +189,34 @@ def fire_pushcut(shot, summary):
         log(f"pushcut err={type(e).__name__} shot={shot}")
 
 
+def fire_pc(shot, summary):
+    url = read_kv(WAKE_ENV, "PC_WAKE_URL")
+    token = read_kv(WAKE_ENV, "WAKE_TOKEN")
+    if not url or not token:
+        log(f"pc-wake-no-config shot={shot}")
+        return
+    text = f"[{PI_NAME}] {SHOT_MESSAGES.get(shot, 'CC waiting')}: {summary[:120]}"
+    body = json.dumps({"shot": shot, "text": text[:200]}).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json", "X-Wake-Token": token})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            log(f"pc-wake http={r.status} shot={shot}")
+    except urllib.error.HTTPError as e:
+        log(f"pc-wake http={e.code} shot={shot}")
+    except Exception as e:
+        log(f"pc-wake err={type(e).__name__} shot={shot}")
+
+
 def fire(block, shot):
     summary = block.strip().split("\n")[0][:160]
     mode = read_mode()
     if mode == "off":
         log(f"fire-skipped mode=off shot={shot}")
         return mode
+    # PC AHK channel first, then Pushcut — both fire on every shot.
+    fire_pc(shot, summary)
     fire_pushcut(shot, summary)
     return mode
 

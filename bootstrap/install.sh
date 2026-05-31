@@ -314,6 +314,27 @@ phase_identity() {
   DOMAIN="${dom:-$default_domain}"
   save_state DOMAIN "$DOMAIN"
 
+  # PC AHK wake channel (optional). The watcher/notify scripts POST here so
+  # the AHK listener on Julian's PC pops the Claude window. Use the PC's
+  # Tailscale (MagicDNS) hostname — not a raw IP — so it keeps resolving if
+  # the PC's address changes. Leave blank to skip (Pushcut-only). Saved to
+  # state and written to /etc/weyland/wake.env by install-wake.sh; the token
+  # is never committed to the repo.
+  local pc_host wake_tok
+  read -r -p "PC Tailscale hostname for wake (e.g. ju-laptop.tail875649.ts.net — blank to skip): " pc_host
+  if [ -n "$pc_host" ]; then
+    PC_WAKE_URL="http://${pc_host}:7777"
+    save_state PC_WAKE_URL "$PC_WAKE_URL"
+    read -r -p "PC wake token (X-Wake-Token): " wake_tok
+    WAKE_TOKEN="${wake_tok:-}"
+    save_state WAKE_TOKEN "$WAKE_TOKEN"
+    log "PC wake channel: ${PC_WAKE_URL}"
+  else
+    save_state PC_WAKE_URL ""
+    save_state WAKE_TOKEN ""
+    log "PC wake channel skipped (Pushcut-only)"
+  fi
+
   log "identity set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
 }
 
@@ -712,7 +733,8 @@ EOF
   local weyland_dir
   weyland_dir="$(resolve_weyland_dir)"
   log "installing wake system"
-  bash "${weyland_dir}/connector/scripts/install-wake.sh" "$PI_NAME"
+  bash "${weyland_dir}/connector/scripts/install-wake.sh" \
+    "$PI_NAME" "${PC_WAKE_URL:-}" "${WAKE_TOKEN:-}"
 }
 
 # ----------------------------------------------------------------------
