@@ -253,9 +253,24 @@ HTML = r"""<!doctype html>
   .badge.error{background:#2a0a0a; color:#ff6f61; border-color:#7a261c}
   @keyframes anvil{0%,100%{box-shadow:0 0 7px #e8750a44}50%{box-shadow:0 0 22px #e8750aaa}}
   .roster .label{flex:1; font-family:var(--serif); font-size:16px}
-  li.is-pend .label{color:var(--muted)} li.is-run .label,li.is-done .label{color:var(--ink)} li.is-error .label{color:#ffb3a8}
+  li.is-pend .label{color:var(--muted)} li.is-done .label{color:var(--ink)} li.is-error .label{color:#ffb3a8}
+  li.is-run .label{color:#ffd9a0; text-shadow:0 0 10px #e8750a44}
   .stamp{font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; text-align:right}
   li.is-done .stamp{color:var(--gold)} li.is-run .stamp{color:var(--flame-bright)} li.is-pend .stamp{color:var(--leather)} li.is-error .stamp{color:#ff6f61}
+  /* active phase row: a forge-glow sweep so progress is obvious even with no auth card */
+  .roster li.is-run{background:linear-gradient(90deg,#e8750a05,#e8750a22,#e8750a05); background-size:220% 100%; animation:forgesweep 2.6s linear infinite; border-radius:6px}
+  @keyframes forgesweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
+  /* top-of-page activity bar — visible whenever a phase runs and no auth card is up */
+  #forgebar{position:fixed; top:0; left:0; right:0; height:3px; z-index:70; display:none;
+    background:linear-gradient(90deg,transparent,#e8750a,#ff8c1a,#e8750a,transparent); background-size:45% 100%;
+    animation:barslide 1.5s linear infinite; box-shadow:0 0 10px #e8750a66}
+  @keyframes barslide{0%{background-position:-45% 0}100%{background-position:145% 0}}
+  body.forge-active #forgebar{display:block}
+  /* auth card 'awaiting the gate' state — URL not captured yet */
+  .awaiting{flex:1 1 auto; min-width:200px; display:flex; align-items:center; justify-content:center; gap:10px;
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#e8b0a4;
+    border:1px dashed var(--blood-border); border-radius:9px; padding:13px 18px; animation:awaitpulse 1.6s ease-in-out infinite}
+  @keyframes awaitpulse{0%,100%{opacity:1}50%{opacity:.5}}
   .authcard{flex:0 0 auto; margin-top:12px; border:1px solid var(--blood-border); border-radius:12px; background:linear-gradient(180deg,var(--blood-bg),var(--blood-bg2)); padding:16px 16px 15px; position:relative; overflow:hidden; box-shadow:0 0 0 1px #0b0405 inset,0 0 30px #8b1a1a55; animation:bloodglow 2.4s ease-in-out infinite}
   .authcard::after{content:""; position:absolute; inset:0; background-image:var(--grain); background-size:150px 150px; opacity:.06; mix-blend-mode:overlay; pointer-events:none}
   @keyframes bloodglow{0%,100%{box-shadow:0 0 0 1px #0b0405 inset,0 0 18px #8b1a1a44}50%{box-shadow:0 0 0 1px #0b0405 inset,0 0 40px #c0392b88}}
@@ -294,6 +309,7 @@ HTML = r"""<!doctype html>
 </style>
 </head>
 <body data-state="identity">
+  <div id="forgebar"></div>
   <div class="app">
     <div class="topbar"><span class="sigil">&#9874; <b>WEYLAND</b> &middot; DIVINE SMITH &middot; FLEET BOUND</span></div>
     <header class="hero">
@@ -414,14 +430,23 @@ HTML = r"""<!doctype html>
     if(stage!=="identity") renderRoster(s.phases);
 
     var a=s.action, ac=$("authcard");
-    if(stage==="binding" && a && a.active){
+    var authShown = (stage==="binding" && a && a.active);
+    if(authShown){
       var c=AUTH[a.provider]||{t:"THE FORGE DEMANDS TRIBUTE",s:"present yourself",b:"Proceed →",i:""};
       txt("auth-title",c.t); txt("auth-sub",c.s); txt("auth-instr",c.i);
-      var btn=$("auth-btn"); btn.textContent=c.b; btn.setAttribute("href",a.url||"#");
+      var btn=$("auth-btn"), wait=$("auth-wait");
+      // Button only once the URL is captured; until then a pulsing "awaiting".
+      if(a.url){ btn.textContent=c.b; btn.setAttribute("href",a.url); btn.style.display=""; wait.style.display="none"; }
+      else { btn.style.display="none"; wait.style.display=""; }
       var code=$("auth-code"), cp=$("auth-copy");
       if(a.code){code.textContent=a.code; code.style.display=""; cp.style.display="";} else {code.style.display="none"; cp.style.display="none";}
       ac.style.display="";
     } else ac.style.display="none";
+
+    // Top activity bar: a phase is forging and no auth card is up — proof the
+    // forge is alive even when the page would otherwise look idle.
+    var running = (s.phases||[]).some(function(p){ return p.status==="running"; });
+    document.body.classList.toggle("forge-active", stage==="binding" && running && !authShown);
 
     var d=$("details");
     if(ready){ d.style.display=""; var r=s.result;

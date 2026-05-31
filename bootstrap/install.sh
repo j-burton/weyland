@@ -216,9 +216,14 @@ run_dance() {
     n=0
     while [ "$n" -lt 1800 ]; do
       if [ -s "$logf" ]; then
-        u="$(grep -oE "$url_re" "$logf" 2>/dev/null | head -n1 || true)"
+        # The log is a `script` pty typescript: CLIs emit ANSI escapes / CRs /
+        # spinners, which make grep treat the file as BINARY and silently miss
+        # the URL (the original capture bug). Strip control bytes first, then
+        # grep the clean text (-a as a belt-and-braces).
+        clean="$(sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\x1b[()][0AB]//g' -e 's/\x1b[=>]//g' "$logf" 2>/dev/null | tr -d '\r' || true)"
+        u="$(printf '%s' "$clean" | grep -aoE "$url_re" | head -n1 || true)"
         if [ -n "$u" ]; then
-          c="$(grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}' "$logf" 2>/dev/null | head -n1 || true)"
+          c="$(printf '%s' "$clean" | grep -aoE '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n1 || true)"
           state_action "$provider" "$u" "$c"
           break
         fi
