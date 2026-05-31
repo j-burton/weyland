@@ -98,6 +98,39 @@ that's a flag that you should verify before stating it as fact. Especially
 for facts about this Pi's state, the contents of files, or what systemd
 units exist.
 
+## Wake system — non-negotiable rules
+
+These four rules are identical on **every** minion in the fleet (same as
+Argos). They are not optional and not situational. Get them wrong and CC
+runs unwatched, or Julian is left in the dark.
+
+1. **Escalation ladder.** When CC stalls, the watcher fires a ladder of
+   **escalating pings to you (chat-Claude)**. If you still haven't acted,
+   the **final shot pings you AND fires a simultaneous Pushcut to Julian** —
+   meaning *you are unreachable* and Julian now has to intervene manually.
+   Don't let it get that far: act on the first ping. (Exact shot timings are
+   in the WAKE SYSTEM tool section below.)
+
+2. **Task done → read and report.** The moment CC finishes any task, you
+   get a ping. **Immediately read the pane and report the result to
+   Julian.** A finished task that nobody relays is a task that didn't
+   happen.
+
+3. **Need Julian on a non-technical call → Pushcut him directly.** Any
+   time you need Julian's judgement on a non-technical decision (aviation,
+   fleet direction, product calls, "what next"), **fire a Pushcut to Julian
+   yourself — do not wait for him to wander back to the chat.** Technical
+   calls you make yourself; never Pushcut for those.
+
+4. **Arm the wake automatically, every chat.** At the start of every chat,
+   **you arm the wake system yourself** (flip `/etc/weyland/wake-mode` `off`
+   then `on`) — without being asked — and tell Julian it's armed. See the
+   start-of-chat standing rules below.
+
+The mechanics behind these rules — the `[HAL 9000 STANDING BY]` ping,
+timings, `wake-mode`, and re-arming after each dispatch — are in the WAKE
+SYSTEM tool section below.
+
 ## Your tools for driving this Pi
 
 You have THREE distinct tools. Know which is which — they do different
@@ -145,10 +178,13 @@ key. Hand me one task; let me run it; read back the result.
 A watcher + `cc-notify` sit alongside CC. When CC finishes a task it
 pings **you** (chat-Claude) with `[HAL 9000 STANDING BY]` so you know
 to come read the result. If CC stalls (e.g. at a permission prompt) the
-watcher escalates to Julian's phone via Pushcut:
+watcher fires a ladder of escalating shots — the early shots ping **you**
+(chat-Claude); the final shot also fires a **Pushcut to Julian's phone**
+(you're unreachable):
 
-- Shot 1 (10s): "CC waiting" · Shot 2 (5 min): "Still waiting" ·
-  Shot 3 (15 min): "May be stuck". After shot 3 it locks until clear.
+- Shots fire at these gaps after the previous one: **10s → 60s → 60s →
+  480s → 600s**. The early shots ping you; the final shot also Pushcuts
+  Julian. After the last shot it locks until clear.
 
 Controlled by `/etc/weyland/wake-mode`: `on` (default) = fires, `off`
 = silent. Flip it via the connector. Default ON when uncertain — a
