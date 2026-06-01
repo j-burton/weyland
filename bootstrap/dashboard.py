@@ -738,7 +738,7 @@ HTML = r"""<!doctype html>
             <input type="file" id="ssh-file" accept=".pub,text/plain" style="display:none">
             <p class="ssh-hint">your key usually lives here &mdash; click to copy the path, then paste it into the file picker:</p>
             <div class="chips">
-              <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh\id_rsa.pub">Windows: %USERPROFILE%\.ssh\id_rsa.pub</button>
+              <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh">Windows: %USERPROFILE%\.ssh\id_rsa.pub</button>
               <button class="chip" type="button" data-copy-text="~/.ssh/id_rsa.pub">Mac: ~/.ssh/id_rsa.pub</button>
             </div>
             <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
@@ -756,7 +756,7 @@ HTML = r"""<!doctype html>
                 <p class="ssh-hint">saved to your Downloads &mdash; now move it to your SSH folder (click a path to copy):</p>
                 <div class="chips">
                   <button class="chip" type="button" data-copy-text="~/.ssh/id_ed25519">Mac: ~/.ssh/id_ed25519</button>
-                  <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh\id_ed25519">Windows: %USERPROFILE%\.ssh\id_ed25519</button>
+                  <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh">Windows: %USERPROFILE%\.ssh\id_ed25519</button>
                 </div>
                 <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
               </div>
