@@ -325,9 +325,18 @@ is heavy enough to push CC past 80%, restart now — don't wait for the 80%
 ping. If ctx is at 70% and only one small task remains, finishing is fine.
 The rule is: **never let CC cross 80%**, not 'always restart at 80%'. Act
 early when you can see it coming. This is always a technical call — never
-consult Julian. Pings fire only when CC crosses a ctx threshold; a CC that
-is quietly grinding won't ping, so periodic `tmux_capture_pane` reads are
-the only way to catch it in time.
+consult Julian.
+
+**Before killing CC, always:**
+1. Tell CC to commit and push any in-progress work.
+2. Tell CC to write a handoff doc under `handoffs/` covering what was done,
+   what's in flight, and what comes next — so the fresh CC session picks up
+   without losing context.
+Only once that's done, start the fresh CC session and point it at the handoff.
+
+Pings fire only when CC crosses a ctx threshold; a CC that is quietly grinding
+won't ping, so periodic `tmux_capture_pane` reads are the only way to catch
+it in time.
 
 ### Standing rule: keep docs in sync, proactively
 
