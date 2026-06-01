@@ -638,6 +638,9 @@ HTML = r"""<!doctype html>
   .btn-fire:hover{filter:brightness(1.07)} .btn-fire:active{transform:translateY(1px)}
   .btn-blood{background:linear-gradient(180deg,#d0432f,#8b1a1a); color:#fbe3de; font-weight:700; box-shadow:0 0 0 1px #5a1212,0 0 22px #8b1a1a55; flex:1 1 auto; min-width:200px}
   .btn-block{width:100%; margin-top:16px}
+  /* page-1/2 split: small unobtrusive Back link (matches the 'optional' labels) */
+  .backlink{display:inline-block; margin-top:13px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); text-decoration:none; cursor:pointer}
+  .backlink:hover{color:var(--flame-bright)}
   .copy{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); background:#323d4a; border:1px solid var(--line2); border-radius:8px; padding:0 14px; cursor:pointer}
   .copy:hover{border-color:var(--flame); color:var(--flame-bright)} .copy:active{transform:translateY(1px)} .copy.ok{color:var(--gold); border-color:#6e5212}
   .details{flex:0 0 auto; margin-top:12px}
@@ -679,23 +682,32 @@ HTML = r"""<!doctype html>
 
     <div class="stage" id="stage">
       <section class="forge-form" id="form" aria-label="Name the minion">
-        <h3>NAME THE MINION</h3>
-        <p class="lead">speak the minion's name and domain, my Lord — the rite cannot begin without it</p>
-        <div class="frow"><label for="i-name">Minion name</label>
-          <input id="i-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. inkypi"></div>
-        <div class="frow"><label for="i-domain">Domain</label>
-          <input id="i-domain" type="text" autocomplete="off" spellcheck="false" placeholder="julianburton.com"></div>
-        <div class="pair">
-          <div class="frow"><label for="i-pc">PC wake hostname <span class="opt">&middot; optional</span></label>
-            <input id="i-pc" type="text" autocomplete="off" spellcheck="false" placeholder="ju-laptop.tail875649.ts.net"></div>
-          <div class="frow"><label for="i-tok">Wake token <span class="opt">&middot; optional</span></label>
-            <input id="i-tok" type="text" autocomplete="off" spellcheck="false" placeholder="X-Wake-Token"></div>
+        <!-- Page 1 — essentials. Next validates the name, then reveals page 2. -->
+        <div class="form-page" id="form-p1">
+          <h3>NAME THE MINION</h3>
+          <p class="lead">speak the minion's name and domain, my Lord — the rite cannot begin without it</p>
+          <div class="frow"><label for="i-name">Minion name</label>
+            <input id="i-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. inkypi"></div>
+          <div class="frow"><label for="i-domain">Domain</label>
+            <input id="i-domain" type="text" autocomplete="off" spellcheck="false" placeholder="julianburton.com"></div>
+          <button class="btn btn-fire btn-block" type="button" id="form-next">Next &rarr;</button>
+          <p class="fmsg" id="fmsg1"></p>
         </div>
+        <!-- Page 2 — optional extras. Values persist across Back (hidden, not reset). -->
+        <div class="form-page" id="form-p2" style="display:none">
+        <h3>FORGE THE OPTIONS</h3>
+        <p class="lead">optional rites, my Lord — leave any blank to skip it</p>
         <div class="pair">
           <div class="frow"><label for="i-pw">Change Pi password <span class="opt">&middot; optional</span></label>
             <input id="i-pw" type="password" autocomplete="new-password" placeholder="blank = keep current"></div>
           <div class="frow"><label for="i-pw2">Confirm password</label>
             <input id="i-pw2" type="password" autocomplete="new-password" placeholder="re-enter to confirm"></div>
+        </div>
+        <div class="pair">
+          <div class="frow"><label for="i-pc">PC wake hostname <span class="opt">&middot; optional</span></label>
+            <input id="i-pc" type="text" autocomplete="off" spellcheck="false" placeholder="ju-laptop.tail875649.ts.net"></div>
+          <div class="frow"><label for="i-tok">Wake token <span class="opt">&middot; optional</span></label>
+            <input id="i-tok" type="text" autocomplete="off" spellcheck="false" placeholder="X-Wake-Token"></div>
         </div>
         <div class="frow ssh-sec">
           <label>SSH access <span class="opt">&middot; optional &middot; password login stays enabled either way</span></label>
@@ -746,7 +758,9 @@ HTML = r"""<!doctype html>
           </div>
         </div>
         <button class="btn btn-fire btn-block" type="button" id="begin">Begin the rite &rarr;</button>
-        <p class="fmsg" id="fmsg"></p>
+        <p class="fmsg" id="fmsg2"></p>
+        <a class="backlink" id="form-back" href="#" role="button">&larr; back to the minion's name</a>
+        </div>
       </section>
       <ul class="roster" id="roster" style="display:none"></ul>
     </div>
@@ -944,9 +958,22 @@ HTML = r"""<!doctype html>
       .then(function(j){ if(j) applyState(j); }).catch(function(){});
   }
   $("i-name").addEventListener("input", function(){ nameTouched=true; if(document.body.getAttribute("data-state")==="identity") setName(liveName()); });
-  $("begin").addEventListener("click", function(){
-    var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg");
+  // Two-page identity form. Page 1 = name+domain (Next validates the name),
+  // page 2 = optional extras (Begin submits). Values persist across Back since
+  // the inputs are only hidden, never reset.
+  function showFormPage(n){
+    $("form-p1").style.display = n===2?"none":"";
+    $("form-p2").style.display = n===2?"":"none";
+  }
+  $("form-next").addEventListener("click", function(){
+    var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg1");
     if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
+    m.textContent=""; showFormPage(2);
+  });
+  $("form-back").addEventListener("click", function(e){ e.preventDefault(); showFormPage(1); });
+  $("begin").addEventListener("click", function(){
+    var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg2");
+    if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ showFormPage(1); var m1=$("fmsg1"); m1.style.color="#e88"; m1.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
     var pw=$("i-pw").value, pw2=$("i-pw2").value;
     if(pw && pw!==pw2){ m.style.color="#e88"; m.textContent="the passwords do not match, my Lord"; return; }
     if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="choose your public-key (.pub) file first, my Lord"; return; }
@@ -989,7 +1016,7 @@ HTML = r"""<!doctype html>
         // The bootstrap reset state + relaunched; drop our local stage memory so
         // applyState recomputes from the fresh (identity) state, and clear the
         // name field so the prefill can repopulate it.
-        submitted=false; nameTouched=false; var inp=$("i-name"); if(inp) inp.value="";
+        submitted=false; nameTouched=false; var inp=$("i-name"); if(inp) inp.value=""; showFormPage(1);
         setTimeout(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; tick(); }, 700);
       })
       .catch(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; });
@@ -1003,7 +1030,7 @@ HTML = r"""<!doctype html>
     if(!confirm("Begin again? This stops the interrupted rite and returns to naming the minion. Nothing already installed is undone.")) return;
     choiceDismissed=true; $("choice").style.display="none";
     fetch("/restart?k="+encodeURIComponent(K),{method:"POST"})
-      .then(function(){ submitted=false; nameTouched=false; choiceArmed=false; var inp=$("i-name"); if(inp) inp.value=""; setTimeout(tick,700); })
+      .then(function(){ submitted=false; nameTouched=false; choiceArmed=false; var inp=$("i-name"); if(inp) inp.value=""; showFormPage(1); setTimeout(tick,700); })
       .catch(function(){ tick(); });
   });
   // ===== SSH access: existing-key picker + browser-side ed25519 generation =====
