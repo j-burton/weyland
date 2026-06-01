@@ -250,6 +250,33 @@ run_dance() {
   ) &
   local watcher=$!
 
+  # Paste-back channel: some logins (Claude) print a URL AND then wait for the
+  # operator to paste a code back. The dashboard collects it (POST /authcode ->
+  # $STATE_DIR/authcode); this feeder pipes it into the login's stdin via a FIFO.
+  local codef="${STATE_DIR}/authcode" fifo="" feeder="" stdin_src=/dev/null
+  rm -f "$codef" 2>/dev/null || true
+  if [ "$provider" = "anthropic" ]; then
+    fifo="${STATE_DIR}/${phase}.in"
+    rm -f "$fifo" 2>/dev/null || true
+    if mkfifo "$fifo" 2>/dev/null; then
+      stdin_src="$fifo"
+      (
+        exec 3>"$fifo"     # unblocks once the login opens the FIFO for reading
+        fn=0
+        while [ "$fn" -lt 1800 ]; do
+          if [ -s "$codef" ]; then
+            cc="$(cat "$codef" 2>/dev/null)"; rm -f "$codef" 2>/dev/null || true
+            [ -n "$cc" ] && printf '%s\n' "$cc" >&3
+          fi
+          sleep 1; fn=$((fn + 1))
+        done
+      ) &
+      feeder=$!
+    else
+      fifo=""
+    fi
+  fi
+
   local rc=0
   # timeout caps the WHOLE login: SIGTERM at $cap, SIGKILL 10s later if it clings
   # (an unfinished `cloudflared tunnel login` etc. ignores TERM). 124 = timed out.
@@ -262,14 +289,17 @@ run_dance() {
     # the watcher never captures the URL (the live "empty Tailscale button" bug,
     # reproduced on inkypi). -f flushes after every write so the URL lands in the
     # log within a poll and the dashboard button gets its href.
-    timeout -k 10 "$cap" script -qfec "$cmd" "$logf" || rc=$?
+    timeout -k 10 "$cap" script -qfec "$cmd" "$logf" < "$stdin_src" || rc=$?
   else
-    timeout -k 10 "$cap" bash -c "$cmd" 2>&1 | tee "$logf" || true
+    timeout -k 10 "$cap" bash -c "$cmd" < "$stdin_src" 2>&1 | tee "$logf" || true
     rc=${PIPESTATUS[0]}
   fi
 
   kill "$watcher" 2>/dev/null || true
   wait "$watcher" 2>/dev/null || true
+  if [ -n "$feeder" ]; then kill "$feeder" 2>/dev/null || true; wait "$feeder" 2>/dev/null || true; fi
+  [ -n "$fifo" ] && rm -f "$fifo" 2>/dev/null || true
+  rm -f "$codef" 2>/dev/null || true
   state_action_clear
   if [ "$rc" -eq 0 ]; then
     state_phase "$phase" done

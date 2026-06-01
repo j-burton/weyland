@@ -495,6 +495,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/done":
             self._send(200, b"sealed")
             threading.Thread(target=self._shutdown, daemon=True).start()
+        elif path == "/authcode":
+            code = (self._body_form().get("code", [""])[0] or "").strip()
+            if not code:
+                self._send(400, b"empty")
+                return
+            ok = write_authcode(code)
+            self._send(200 if ok else 500, b"ok" if ok else b"write failed")
         else:
             self._send(404, b"not found")
 
@@ -510,6 +517,25 @@ def idle_watch():
         if time.time() - _last[0] > IDLE_TIMEOUT and _srv[0]:
             _srv[0].shutdown()
             return
+
+
+def write_authcode(code):
+    """Persist the OAuth code the operator pasted into the dashboard so the
+    bash side (run_dance) can feed it to the waiting `claude auth login` on
+    stdin. One sanitised line; bash reads it then deletes it."""
+    code = "".join(ch for ch in (code or "") if ch.isprintable()).strip()[:512]
+    if not code:
+        return False
+    try:
+        path = os.path.join(STATE_DIR, "authcode")
+        d = os.path.dirname(path) or "."
+        fd, tmp = tempfile.mkstemp(dir=d)
+        with os.fdopen(fd, "w") as f:
+            f.write(code)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        return False
 
 
 def main():
@@ -740,6 +766,11 @@ HTML = r"""<!doctype html>
   .warn{font-size:12.5px; color:#e8c79a; background:#241a08; border:1px solid #5a4a20; border-radius:8px; padding:9px 11px; margin:0 0 12px}
   .warn b{color:var(--flame-bright)}
   .patmsg{font-family:var(--mono); font-size:11px; margin:8px 0 0; min-height:14px} .patmsg.ok{color:var(--gold)} .patmsg.err{color:#ff6f61}
+  .authcode{margin-top:13px}
+  .authcode-lead{font-family:var(--serif); font-style:italic; font-size:12.5px; color:#e8c79a; margin:0 0 8px}
+  .authcode-row{display:flex; gap:8px; align-items:stretch}
+  #authcode-input{flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--ink); background:#1a212a; border:1px solid var(--blood-border); border-radius:8px; padding:10px 12px}
+  #authcode-submit{white-space:nowrap}
   .seal{margin-top:14px; width:100%; font-family:var(--cinzel); font-weight:700; letter-spacing:.08em}
   .gate{flex:1 1 auto; display:grid; place-items:center; text-align:center; font-family:var(--serif); font-style:italic; color:var(--muted); font-size:15px; padding:20px}
   :focus-visible{outline:2px solid var(--flame); outline-offset:2px; border-radius:6px}
@@ -838,6 +869,14 @@ HTML = r"""<!doctype html>
         <button class="copy" id="auth-copy" data-copy="auth-code" type="button" style="display:none">Copy</button>
       </div>
       <p class="instr" id="auth-instr"></p>
+      <div class="authcode" id="authcode-entry" style="display:none">
+        <p class="authcode-lead">after you sign in, the page shows you a code &mdash; paste it here to awaken the intelligence:</p>
+        <div class="authcode-row">
+          <input id="authcode-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="paste the code from the page">
+          <button class="btn btn-blood" id="authcode-submit" type="button">Hand it over &rarr;</button>
+        </div>
+        <p class="patmsg" id="authcode-msg"></p>
+      </div>
     </section>
 
     <div class="details" id="details" style="display:none">
@@ -1001,6 +1040,7 @@ HTML = r"""<!doctype html>
       else { btn.style.display="none"; wait.style.display=""; }
       var code=$("auth-code"), cp=$("auth-copy");
       if(a.code){code.textContent=a.code; code.style.display=""; cp.style.display="";} else {code.style.display="none"; cp.style.display="none";}
+      var ace=$("authcode-entry"); if(ace){ ace.style.display=(a.provider==="anthropic" && a.url)?"":"none"; }
       ac.style.display="";
     } else ac.style.display="none";
     document.body.classList.toggle("auth-modal", !!authShown);
@@ -1239,6 +1279,20 @@ HTML = r"""<!doctype html>
     else { sshPubKey=""; st.className="ssh-status err"; st.textContent="that isn't an SSH public key — paste the line starting ssh-ed25519 / ssh-rsa / ecdsa-…"; }
   }
   $("ssh-paste").addEventListener("input", validatePaste);
+  (function(){
+    var b=$("authcode-submit"), inp=$("authcode-input"), msg=$("authcode-msg");
+    if(!b||!inp) return;
+    function send(){
+      var v=(inp.value||"").trim();
+      if(!v){ msg.className="patmsg err"; msg.textContent="paste the code first, my Lord"; return; }
+      b.disabled=true; msg.className="patmsg"; msg.textContent="handing it to the forge\u2026";
+      fetch("/authcode?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"code="+encodeURIComponent(v)})
+        .then(function(r){ if(r.ok){ msg.className="patmsg ok"; msg.textContent="\u2713 code received \u2014 the intelligence awakens\u2026"; inp.value=""; } else { msg.className="patmsg err"; msg.textContent="the forge refused that code \u2014 try again"; } b.disabled=false; })
+        .catch(function(){ msg.className="patmsg err"; msg.textContent="couldn\u2019t reach the forge \u2014 try again"; b.disabled=false; });
+    }
+    b.addEventListener("click", send);
+    inp.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); send(); } });
+  })();
   document.querySelectorAll(".howto .tab").forEach(function(t){ t.addEventListener("click", function(){
     var tab=this.getAttribute("data-tab");
     document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
