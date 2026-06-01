@@ -1010,7 +1010,7 @@ phase_claude_code() {
   email), and approve.
 
 EOF
-    run_dance claude_code anthropic 'https://[A-Za-z0-9.-]*(anthropic\.com|claude\.ai)[^[:space:]]*' -- \
+    run_dance claude_code anthropic 'https://claude\.com/cai/oauth/authorize[^[:space:]]*|https://[A-Za-z0-9.-]*(anthropic\.com|claude\.ai)[^[:space:]]*' -- \
       'claude auth login' \
       || die "claude auth login failed"
   else
