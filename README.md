@@ -21,6 +21,23 @@ bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootst
 Expect ~5 minutes and four browser dances (GitHub, Tailscale,
 Cloudflare, Anthropic). Detailed walkthrough in `docs/NEW_PI.md`.
 
+## Reset a Pi to start fresh
+
+To wipe a **disposable / test** Pi back to a clean, pre-bootstrap state and
+run again from scratch — signs it out of Claude, GitHub, Tailscale and
+Cloudflare, and removes weyland's state, the per-Pi repo, the Claude
+auto-start service and the Cloudflare tunnel (installed tools are left in
+place):
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/reset.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/bootstrap/install.sh)
+```
+
+Safety: reset refuses to run on protected Pis (`unifiviewer`, `argos`), refuses
+to run from inside tmux, and won't touch anything until you type the Pi's
+hostname to confirm.
+
 ## Set up a Claude Desktop project for it
 
 After the bootstrap finishes, create a new Claude Desktop project
