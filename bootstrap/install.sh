@@ -862,7 +862,9 @@ phase_per_pi_repo() {
     gh repo clone "$repo_slug" "$local_dir"
   else
     log "${local_dir} already cloned; pulling latest"
-    git -C "$local_dir" pull --ff-only 2>/dev/null || true
+    if ! GIT_TERMINAL_PROMPT=0 timeout 30 git -C "$local_dir" pull --ff-only 2>&1; then
+      warn "pull failed or timed out for ${local_dir}; continuing with existing checkout"
+    fi
   fi
 
   # Seed from weyland templates if the per-Pi repo is empty.
