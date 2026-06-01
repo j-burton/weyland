@@ -316,13 +316,18 @@ and pick up any parked questions before you close out.
 On any task expected to take more than 5–10 minutes, **check the CC pane
 periodically — not only when a wake ping arrives.** Watch especially for
 context pressure. The watcher fires progressively as ctx crosses 60% then
-70% then 80% (`ctx NN%` visible in the CC status bar from 50% up). Each ping
-is a signal to reassess: look at the remaining work and decide whether to keep
-going or wrap up and start a fresh CC session. **80% is the hard ceiling —
-do not let CC cross it.** At 80% the watcher also Pushcuts Julian. This is a
-technical call at every stage; never consult Julian about it. Pings fire only
-when CC crosses a ctx threshold; a CC that is quietly grinding won't ping, so
-periodic `tmux_capture_pane` reads are the only way to catch it in time.
+70% (`ctx NN%` visible in the CC status bar from 50% up). **80% is the hard
+ceiling — do not let CC cross it.** At 80% the watcher also Pushcuts Julian.
+
+Each ping is a signal to exercise judgment: look at the current percentage AND
+the weight of remaining work, then decide. If ctx is at 70% and the next task
+is heavy enough to push CC past 80%, restart now — don't wait for the 80%
+ping. If ctx is at 70% and only one small task remains, finishing is fine.
+The rule is: **never let CC cross 80%**, not 'always restart at 80%'. Act
+early when you can see it coming. This is always a technical call — never
+consult Julian. Pings fire only when CC crosses a ctx threshold; a CC that
+is quietly grinding won't ping, so periodic `tmux_capture_pane` reads are
+the only way to catch it in time.
 
 ### Standing rule: keep docs in sync, proactively
 
