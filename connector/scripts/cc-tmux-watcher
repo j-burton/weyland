@@ -276,32 +276,53 @@ def write_ctx_state(s):
         log(f"ctx-state-write-err err={type(e).__name__}")
 
 
-def fire_ctx_pushcut(threshold, pct):
-    """Pushcut Julian about context pressure. Honours wake-mode like the idle
-    ladder; context alerts go to the phone only (no PC nudge — this is a
-    'wrap up' heads-up, not a stuck-CC escalation)."""
+def fire_ctx_alert(threshold, pct):
+    """Context pressure alert. At 60/70/80% ping chat-Claude via the PC
+    channel only — this is a heads-up for chat-Claude to assess remaining
+    work and decide whether to wrap up or start a fresh CC session. That
+    is a technical call; Julian is never consulted. At 90% also Pushcut
+    Julian as a last-resort fallback in case chat-Claude hasn't acted."""
     mode = read_mode()
     if mode == "off":
         log(f"ctx-fire-skipped mode=off threshold={threshold} pct={pct}")
         return
-    secret = read_kv(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
-    if not secret:
-        log(f"ctx-pushcut-no-secret threshold={threshold}")
-        return
-    url = f"https://api.pushcut.io/{secret}/notifications/CC_Needs_Julian"
     text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — "
-            f"wrap up / commit before it fills")
-    body = json.dumps({"text": text[:200]}).encode()
-    req = urllib.request.Request(
-        url, data=body, method="POST",
-        headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=5) as r:
-            log(f"ctx-pushcut http={r.status} threshold={threshold} pct={pct}")
-    except urllib.error.HTTPError as e:
-        log(f"ctx-pushcut http={e.code} threshold={threshold}")
-    except Exception as e:
-        log(f"ctx-pushcut err={type(e).__name__} threshold={threshold}")
+            f"assess remaining work and decide: finish task or start fresh CC")
+    # Always ping the PC channel (chat-Claude).
+    pc_url = read_kv(WAKE_ENV, "PC_WAKE_URL")
+    pc_token = read_kv(WAKE_ENV, "WAKE_TOKEN")
+    if pc_url and pc_token:
+        body = json.dumps({"shot": f"ctx-{threshold}", "text": text[:200]}).encode()
+        req = urllib.request.Request(
+            pc_url, data=body, method="POST",
+            headers={"Content-Type": "application/json", "X-Wake-Token": pc_token})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                log(f"ctx-pc http={r.status} threshold={threshold} pct={pct}")
+        except urllib.error.HTTPError as e:
+            log(f"ctx-pc http={e.code} threshold={threshold}")
+        except Exception as e:
+            log(f"ctx-pc err={type(e).__name__} threshold={threshold}")
+    else:
+        log(f"ctx-pc-no-config threshold={threshold}")
+    # Only at 90% also Pushcut Julian — chat-Claude hasn't acted by then.
+    if threshold >= 90:
+        secret = read_kv(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
+        if not secret:
+            log(f"ctx-pushcut-no-secret threshold={threshold}")
+            return
+        url = f"https://api.pushcut.io/{secret}/notifications/CC_Needs_Julian"
+        body = json.dumps({"text": text[:200]}).encode()
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                log(f"ctx-pushcut http={r.status} threshold={threshold} pct={pct}")
+        except urllib.error.HTTPError as e:
+            log(f"ctx-pushcut http={e.code} threshold={threshold}")
+        except Exception as e:
+            log(f"ctx-pushcut err={type(e).__name__} threshold={threshold}")
 
 
 def check_context(pane):
@@ -347,7 +368,7 @@ def check_context(pane):
             cand_target = target
             cand_count = 1
         if cand_count >= DEBOUNCE_POLLS:
-            fire_ctx_pushcut(target, pct)
+            fire_ctx_alert(target, pct)
             log(f"ctx-fire threshold={target} pct={pct}")
             write_ctx_state({"fired": target, "cand_target": 0,
                              "cand_count": 0, "absent_count": 0})
