@@ -1019,6 +1019,29 @@ HTML = r"""<!doctype html>
     if(open) $("panel").scrollIntoView({behavior:"smooth",block:"start"});
   });
   function flash(b){var t=b.textContent;b.textContent="Copied";b.classList.add("ok");setTimeout(function(){b.textContent=t;b.classList.remove("ok");},1400);}
+  // execCommand('copy') via a temp textarea — works over plain HTTP, where the
+  // async Clipboard API is blocked (non-secure context).
+  function execCopy(s){
+    try{
+      var ta=document.createElement("textarea");
+      ta.value=s; ta.setAttribute("readonly","");
+      ta.style.position="fixed"; ta.style.top="-1000px"; ta.style.left="-1000px"; ta.style.opacity="0";
+      document.body.appendChild(ta);
+      ta.focus(); ta.select(); try{ ta.setSelectionRange(0, s.length); }catch(_){}
+      var ok=document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    }catch(e){ return false; }
+  }
+  // Copy text via the Clipboard API when allowed, else fall back to execCopy.
+  // Calls onOk() only when the copy actually succeeded.
+  function copyText(s, onOk){
+    s=(""+s);
+    function fb(){ if(execCopy(s) && onOk) onOk(); }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(s).then(function(){ if(onOk) onOk(); }, fb);
+    } else { fb(); }
+  }
   document.addEventListener("click", function(e){
     // One copy handler for both: data-copy (look up an element by id and copy its
     // value/text) and data-copy-text (copy the literal string, e.g. the .chip
@@ -1032,7 +1055,7 @@ HTML = r"""<!doctype html>
       text=(el.tagName==="TEXTAREA"||el.tagName==="INPUT")?el.value:el.textContent;
     }
     if(text==null) return;
-    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText((""+text).trim()).then(function(){flash(b);},function(){}); else flash(b);
+    copyText((""+text).trim(), function(){ flash(b); });
   });
   $("patsave").addEventListener("click", function(){
     var pat=$("f-pat").value.trim(), m=$("patmsg");
