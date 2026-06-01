@@ -559,6 +559,7 @@ HTML = r"""<!doctype html>
   .btn-ghost.dl{display:inline-flex; flex-direction:column; gap:2px; min-width:170px}
   .dlsub{font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--leather)}
   .ssh-hint{font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather); margin:11px 0 7px}
+  .ssh-note{font-family:var(--mono); font-size:10px; letter-spacing:.03em; color:var(--leather); margin:5px 0 0}
   .chips{display:flex; flex-wrap:wrap; gap:7px}
   .chip{font-family:var(--mono); font-size:10.5px; color:var(--ink); background:#11161c; border:1px dashed var(--line); border-radius:7px; padding:6px 9px; cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .chip:hover{border-color:var(--flame); color:var(--flame-bright)} .chip.ok{border-style:solid; border-color:#6e5212; color:var(--gold)}
@@ -737,9 +738,10 @@ HTML = r"""<!doctype html>
             <input type="file" id="ssh-file" accept=".pub,text/plain" style="display:none">
             <p class="ssh-hint">your key usually lives here &mdash; click to copy the path, then paste it into the file picker:</p>
             <div class="chips">
-              <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\id_rsa.pub">Windows: C:\Users\&lt;name&gt;\.ssh\id_rsa.pub</button>
+              <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh\id_rsa.pub">Windows: %USERPROFILE%\.ssh\id_rsa.pub</button>
               <button class="chip" type="button" data-copy-text="~/.ssh/id_rsa.pub">Mac: ~/.ssh/id_rsa.pub</button>
             </div>
+            <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
             <p class="ssh-status" id="ssh-existing-status"></p>
           </div>
 
@@ -754,8 +756,9 @@ HTML = r"""<!doctype html>
                 <p class="ssh-hint">saved to your Downloads &mdash; now move it to your SSH folder (click a path to copy):</p>
                 <div class="chips">
                   <button class="chip" type="button" data-copy-text="~/.ssh/id_ed25519">Mac: ~/.ssh/id_ed25519</button>
-                  <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\id_ed25519">Windows: C:\Users\&lt;name&gt;\.ssh\id_ed25519</button>
+                  <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh\id_ed25519">Windows: %USERPROFILE%\.ssh\id_ed25519</button>
                 </div>
+                <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
               </div>
               <div class="dlrow">
                 <button class="btn-ghost dl" type="button" id="dl-ppk">&#8595; id_ed25519.ppk <span class="dlsub">PuTTY (no PuTTYgen)</span></button>
