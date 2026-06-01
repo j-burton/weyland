@@ -530,25 +530,25 @@ HTML = r"""<!doctype html>
   body[data-state="complete"] .glyph{color:var(--gold); text-shadow:0 0 12px var(--gold)}
   @keyframes emberpulse{0%,100%{opacity:1; text-shadow:0 0 14px var(--flame)}50%{opacity:.45; text-shadow:0 0 5px var(--flame)}}
   .stage{flex:1 1 0; min-height:0; overflow:auto; margin-top:8px}
-  .forge-form{border:1px solid var(--line2); border-radius:12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:18px; position:relative; overflow:hidden}
+  .forge-form{border:1px solid var(--line2); border-radius:12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:14px; position:relative; overflow:hidden}
   .forge-form::after{content:""; position:absolute; inset:0; background-image:var(--grain); background-size:150px 150px; opacity:.05; mix-blend-mode:overlay; pointer-events:none}
-  .forge-form h3{margin:0 0 4px; font-family:var(--cinzel); font-weight:700; font-size:18px; letter-spacing:.05em; text-transform:uppercase; color:var(--flame-bright); text-shadow:0 1px 0 #7a3c08,0 0 16px #e8750a44}
-  .forge-form .lead{margin:0 0 16px; font-family:var(--serif); font-style:italic; font-size:13.5px; color:var(--leather)}
-  .frow{margin:12px 0; position:relative; z-index:1}
-  .frow label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+  .forge-form h3{margin:0 0 3px; font-family:var(--cinzel); font-weight:700; font-size:16px; letter-spacing:.05em; text-transform:uppercase; color:var(--flame-bright); text-shadow:0 1px 0 #7a3c08,0 0 16px #e8750a44}
+  .forge-form .lead{margin:0 0 9px; font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather)}
+  .frow{margin:7px 0; position:relative; z-index:1}
+  .frow label{display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 4px}
   .frow label .opt{color:var(--steelblue); letter-spacing:.1em}
-  .frow input{width:100%; font-family:var(--mono); font-size:14px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:11px 12px}
+  .frow input{width:100%; font-family:var(--mono); font-size:13.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:8px 11px}
   .frow input::placeholder{color:#6f6753}
   .frow input:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
   .frow textarea{width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; resize:vertical; line-height:1.4; white-space:pre; overflow-x:auto}
   .frow textarea::placeholder{color:#6f6753}
   .frow textarea:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
-  .pair{display:grid; grid-template-columns:1fr 1fr; gap:12px} @media (max-width:560px){.pair{grid-template-columns:1fr}}
+  .pair{display:grid; grid-template-columns:1fr 1fr; gap:9px} @media (max-width:340px){.pair{grid-template-columns:1fr}}
   .fmsg{font-family:var(--mono); font-size:11px; letter-spacing:.08em; margin:10px 0 0; min-height:14px; color:#e88}
   /* SSH access section (skip / use existing / generate) */
-  .ssh-sec>label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 8px}
-  .ssh-opts{display:flex; flex-direction:column; gap:7px}
-  .ssh-opt{display:flex; align-items:baseline; gap:9px; font-family:var(--serif); font-size:14px; color:var(--ink); cursor:pointer; padding:8px 11px; border:1px solid var(--line2); border-radius:9px; background:#1a212a}
+  .ssh-sec>label{display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+  .ssh-opts{display:flex; flex-direction:column; gap:5px}
+  .ssh-opt{display:flex; align-items:baseline; gap:9px; font-family:var(--serif); font-size:13.5px; color:var(--ink); cursor:pointer; padding:5px 11px; border:1px solid var(--line2); border-radius:9px; background:#1a212a}
   .ssh-opt:hover{border-color:var(--flame)}
   .ssh-opt input{accent-color:var(--flame); margin:0}
   .ssh-opt b{font-weight:700}
@@ -637,9 +637,13 @@ HTML = r"""<!doctype html>
   .btn-fire{background:linear-gradient(180deg,#ff9024,#c45a08); color:#180c02; font-weight:700; box-shadow:0 0 0 1px #7a3c08,0 0 24px #e8750a44,0 2px 0 #ffc78a55 inset}
   .btn-fire:hover{filter:brightness(1.07)} .btn-fire:active{transform:translateY(1px)}
   .btn-blood{background:linear-gradient(180deg,#d0432f,#8b1a1a); color:#fbe3de; font-weight:700; box-shadow:0 0 0 1px #5a1212,0 0 22px #8b1a1a55; flex:1 1 auto; min-width:200px}
-  .btn-block{width:100%; margin-top:16px}
+  .btn-block{width:100%; margin-top:11px; padding-top:11px; padding-bottom:11px}
+  /* Page 1 "Next" is a subordinate STEP — muted steel outline, not the flame
+     btn-fire. SUBJUGATE on page 2 keeps btn-fire and reads as the commitment. */
+  .btn-outline{background:#1a212a; color:var(--ink); border:1px solid var(--line2); box-shadow:none; font-weight:400}
+  .btn-outline:hover{border-color:var(--flame); color:var(--flame-bright)} .btn-outline:active{transform:translateY(1px)}
   /* page-1/2 split: small unobtrusive Back link (matches the 'optional' labels) */
-  .backlink{display:inline-block; margin-top:13px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); text-decoration:none; cursor:pointer}
+  .backlink{display:inline-block; margin-top:8px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); text-decoration:none; cursor:pointer}
   .backlink:hover{color:var(--flame-bright)}
   .copy{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); background:#323d4a; border:1px solid var(--line2); border-radius:8px; padding:0 14px; cursor:pointer}
   .copy:hover{border-color:var(--flame); color:var(--flame-bright)} .copy:active{transform:translateY(1px)} .copy.ok{color:var(--gold); border-color:#6e5212}
@@ -690,7 +694,7 @@ HTML = r"""<!doctype html>
             <input id="i-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. inkypi"></div>
           <div class="frow"><label for="i-domain">Domain</label>
             <input id="i-domain" type="text" autocomplete="off" spellcheck="false" placeholder="julianburton.com"></div>
-          <button class="btn btn-fire btn-block" type="button" id="form-next">Next &rarr;</button>
+          <button class="btn btn-outline btn-block" type="button" id="form-next">Next &rarr;</button>
           <p class="fmsg" id="fmsg1"></p>
         </div>
         <!-- Page 2 — optional extras. Values persist across Back (hidden, not reset). -->
