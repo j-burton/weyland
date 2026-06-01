@@ -1228,8 +1228,12 @@ EOF
   local weyland_dir
   weyland_dir="$(resolve_weyland_dir)"
   log "installing wake system"
+  # Feed /dev/null as stdin so install-wake.sh's optional "PC wake URL" prompt
+  # (only intended for running it by hand) is SKIPPED during the bootstrap.
+  # The bootstrap's stdin is still a TTY, so without this the script blocks
+  # forever on a hidden prompt — the operator never sees it and setup stalls.
   bash "${weyland_dir}/connector/scripts/install-wake.sh" \
-    "$PI_NAME" "${PC_WAKE_URL:-}" "${WAKE_TOKEN:-}" "${PUSHCUT_WEBHOOK_SECRET:-}"
+    "$PI_NAME" "${PC_WAKE_URL:-}" "${WAKE_TOKEN:-}" "${PUSHCUT_WEBHOOK_SECRET:-}" </dev/null
 }
 
 # ----------------------------------------------------------------------
