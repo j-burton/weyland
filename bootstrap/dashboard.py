@@ -640,8 +640,8 @@ HTML = r"""<!doctype html>
   .btn-block{width:100%; margin-top:11px; padding-top:11px; padding-bottom:11px}
   /* Page 1 "Next" is a subordinate STEP — muted steel outline, not the flame
      btn-fire. SUBJUGATE on page 2 keeps btn-fire and reads as the commitment. */
-  .btn-outline{background:#1a212a; color:var(--ink); border:1px solid var(--line2); box-shadow:none; font-weight:400}
-  .btn-outline:hover{border-color:var(--flame); color:var(--flame-bright)} .btn-outline:active{transform:translateY(1px)}
+  .btn-outline{background:#1a212a; color:var(--flame-bright); border:1px solid var(--flame); box-shadow:none; font-weight:400}
+  .btn-outline:hover{background:#1c1206; color:#ffb45a} .btn-outline:active{transform:translateY(1px)}
   /* page-1/2 split: small unobtrusive Back link (matches the 'optional' labels) */
   .backlink{display:inline-block; margin-top:8px; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); text-decoration:none; cursor:pointer}
   .backlink:hover{color:var(--flame-bright)}
@@ -699,7 +699,7 @@ HTML = r"""<!doctype html>
         </div>
         <!-- Page 2 — optional extras. Values persist across Back (hidden, not reset). -->
         <div class="form-page" id="form-p2" style="display:none">
-        <h3>FORGE THE OPTIONS</h3>
+        <h3>ARM THE MINION</h3>
         <p class="lead">optional rites, my Lord — leave any blank to skip it</p>
         <div class="pair">
           <div class="frow"><label for="i-pw">Change Pi password <span class="opt">&middot; optional</span></label>
@@ -713,6 +713,14 @@ HTML = r"""<!doctype html>
           <div class="frow"><label for="i-tok">Wake token <span class="opt">&middot; optional</span></label>
             <input id="i-tok" type="text" autocomplete="off" spellcheck="false" placeholder="X-Wake-Token"></div>
         </div>
+        <button class="btn btn-outline btn-block" type="button" id="form-next2">Next &rarr;</button>
+        <p class="fmsg" id="fmsg2"></p>
+        <a class="backlink" id="form-back" href="#" role="button">&larr; back to the minion's name</a>
+        </div>
+        <!-- Page 3 — SSH access + the final commit. -->
+        <div class="form-page" id="form-p3" style="display:none">
+        <h3>OPEN THE GATE</h3>
+        <p class="lead">optional — set up SSH, then seal the binding</p>
         <div class="frow ssh-sec">
           <label>SSH access <span class="opt">&middot; optional &middot; password login stays enabled either way</span></label>
           <div class="ssh-opts">
@@ -762,8 +770,8 @@ HTML = r"""<!doctype html>
           </div>
         </div>
         <button class="btn btn-fire btn-block" type="button" id="begin">SUBJUGATE &rarr;</button>
-        <p class="fmsg" id="fmsg2"></p>
-        <a class="backlink" id="form-back" href="#" role="button">&larr; back to the minion's name</a>
+        <p class="fmsg" id="fmsg3"></p>
+        <a class="backlink" id="form-back2" href="#" role="button">&larr; back</a>
         </div>
       </section>
       <ul class="roster" id="roster" style="display:none"></ul>
@@ -962,24 +970,32 @@ HTML = r"""<!doctype html>
       .then(function(j){ if(j) applyState(j); }).catch(function(){});
   }
   $("i-name").addEventListener("input", function(){ nameTouched=true; if(document.body.getAttribute("data-state")==="identity") setName(liveName()); });
-  // Two-page identity form. Page 1 = name+domain (Next validates the name),
-  // page 2 = optional extras (Begin submits). Values persist across Back since
-  // the inputs are only hidden, never reset.
+  // Three-page identity form so each screen fits without scrolling:
+  //   p1 name+domain  ->  p2 password+wake  ->  p3 SSH + SUBJUGATE (final commit).
+  // Values persist across Back/Next since the inputs are only hidden, never reset.
+  var NAME_OK=/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
   function showFormPage(n){
-    $("form-p1").style.display = n===2?"none":"";
+    $("form-p1").style.display = n===1?"":"none";
     $("form-p2").style.display = n===2?"":"none";
+    $("form-p3").style.display = n===3?"":"none";
   }
   $("form-next").addEventListener("click", function(){
     var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg1");
-    if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
+    if(!NAME_OK.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
     m.textContent=""; showFormPage(2);
   });
-  $("form-back").addEventListener("click", function(e){ e.preventDefault(); showFormPage(1); });
-  $("begin").addEventListener("click", function(){
-    var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg2");
-    if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ showFormPage(1); var m1=$("fmsg1"); m1.style.color="#e88"; m1.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
-    var pw=$("i-pw").value, pw2=$("i-pw2").value;
+  $("form-next2").addEventListener("click", function(){
+    var pw=$("i-pw").value, pw2=$("i-pw2").value, m=$("fmsg2");
     if(pw && pw!==pw2){ m.style.color="#e88"; m.textContent="the passwords do not match, my Lord"; return; }
+    m.textContent=""; showFormPage(3);
+  });
+  $("form-back").addEventListener("click", function(e){ e.preventDefault(); showFormPage(1); });
+  $("form-back2").addEventListener("click", function(e){ e.preventDefault(); showFormPage(2); });
+  $("begin").addEventListener("click", function(){
+    var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg3");
+    if(!NAME_OK.test(nm)){ showFormPage(1); var m1=$("fmsg1"); m1.style.color="#e88"; m1.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
+    var pw=$("i-pw").value, pw2=$("i-pw2").value;
+    if(pw && pw!==pw2){ showFormPage(2); var m2=$("fmsg2"); m2.style.color="#e88"; m2.textContent="the passwords do not match, my Lord"; return; }
     if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="choose your public-key (.pub) file first, my Lord"; return; }
     if(sshMode==="generate" && !sshPubKey){ m.style.color="#e88"; m.textContent="generate a key first — and save both downloads"; return; }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
