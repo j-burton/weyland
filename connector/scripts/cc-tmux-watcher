@@ -63,7 +63,7 @@ RETRY_SCHEDULE = SHOT_GAPS_SEC
 # The weyland status line prints "ctx NN%" in the pane from 50% up. Pushcut
 # Julian as it crosses these thresholds (>= each), once per crossing, escalating
 # as it rises. Its own state file so it never disturbs the idle escalation.
-CTX_THRESHOLDS = [60, 70, 80, 90]
+CTX_THRESHOLDS = [60, 70, 80]
 CTX_RE = re.compile(r"ctx\s*(\d{1,3})\s*%", re.IGNORECASE)
 CTX_STATE_FILE = "/var/lib/weyland/ctx-watcher-state.json"
 # Consecutive polls with the marker ABSENT before we treat context as reset
@@ -277,17 +277,18 @@ def write_ctx_state(s):
 
 
 def fire_ctx_alert(threshold, pct):
-    """Context pressure alert. At 60/70/80% ping chat-Claude via the PC
-    channel only — this is a heads-up for chat-Claude to assess remaining
-    work and decide whether to wrap up or start a fresh CC session. That
-    is a technical call; Julian is never consulted. At 90% also Pushcut
-    Julian as a last-resort fallback in case chat-Claude hasn't acted."""
+    """Context pressure alert. Fires progressively at 60/70/80%.
+    60/70%: PC ping to chat-Claude — reassess whether to keep going or
+    plan a fresh CC session before hitting 80%. Technical call, no Julian.
+    80% (hard ceiling): PC ping + Pushcut Julian — chat-Claude must stop
+    and restart CC before context is exhausted. Do not let CC cross 80%."""
     mode = read_mode()
     if mode == "off":
         log(f"ctx-fire-skipped mode=off threshold={threshold} pct={pct}")
         return
-    text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — "
-            f"assess remaining work and decide: finish task or start fresh CC")
+    hard_stop = threshold >= 80
+    action = "HARD STOP — do not let CC cross 80%. Wrap up and restart CC now" if hard_stop else "reassess: keep going or plan a fresh CC session before 80%"
+    text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
     # Always ping the PC channel (chat-Claude).
     pc_url = read_kv(WAKE_ENV, "PC_WAKE_URL")
     pc_token = read_kv(WAKE_ENV, "WAKE_TOKEN")
@@ -305,8 +306,8 @@ def fire_ctx_alert(threshold, pct):
             log(f"ctx-pc err={type(e).__name__} threshold={threshold}")
     else:
         log(f"ctx-pc-no-config threshold={threshold}")
-    # Only at 90% also Pushcut Julian — chat-Claude hasn't acted by then.
-    if threshold >= 90:
+    # At 80% (hard ceiling) also Pushcut Julian — chat-Claude must act now.
+    if threshold >= 80:
         secret = read_kv(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
         if not secret:
             log(f"ctx-pushcut-no-secret threshold={threshold}")
