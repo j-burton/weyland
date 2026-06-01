@@ -1020,10 +1020,19 @@ HTML = r"""<!doctype html>
   });
   function flash(b){var t=b.textContent;b.textContent="Copied";b.classList.add("ok");setTimeout(function(){b.textContent=t;b.classList.remove("ok");},1400);}
   document.addEventListener("click", function(e){
-    var b=e.target.closest(".copy"); if(!b||!b.getAttribute("data-copy")) return;
-    var el=$(b.getAttribute("data-copy")); if(!el) return;
-    var text=(el.tagName==="TEXTAREA"||el.tagName==="INPUT")?el.value:el.textContent;
-    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText((text||"").trim()).then(function(){flash(b);},function(){}); else flash(b);
+    // One copy handler for both: data-copy (look up an element by id and copy its
+    // value/text) and data-copy-text (copy the literal string, e.g. the .chip
+    // path hints). Same "Copied" flash for both.
+    var b=e.target.closest("[data-copy-text],.copy[data-copy]"); if(!b) return;
+    var text;
+    if(b.hasAttribute("data-copy-text")){
+      text=b.getAttribute("data-copy-text");
+    } else {
+      var el=$(b.getAttribute("data-copy")); if(!el) return;
+      text=(el.tagName==="TEXTAREA"||el.tagName==="INPUT")?el.value:el.textContent;
+    }
+    if(text==null) return;
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText((""+text).trim()).then(function(){flash(b);},function(){}); else flash(b);
   });
   $("patsave").addEventListener("click", function(){
     var pat=$("f-pat").value.trim(), m=$("patmsg");
@@ -1175,12 +1184,6 @@ HTML = r"""<!doctype html>
     document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
     document.querySelectorAll(".howto .tabpane").forEach(function(p){ p.style.display = p.getAttribute("data-pane")===tab?"":"none"; });
   }); });
-  document.addEventListener("click", function(e){
-    var c=e.target.closest(".chip"); if(!c||!c.hasAttribute("data-copy-text")) return;
-    var t=c.getAttribute("data-copy-text"); if(!t){ return; }
-    function done(){ var o=c.textContent; c.classList.add("ok"); c.textContent="copied ✓"; setTimeout(function(){ c.classList.remove("ok"); c.textContent=o; },1200); }
-    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,function(){}); else done();
-  });
   tick(); setInterval(tick, 1500);
 </script>
 </body>
