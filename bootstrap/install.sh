@@ -1347,6 +1347,17 @@ EOF
     "${install_dir}/systemd/weyland-mcp.service.template" \
     | sudo tee "$unit_path" >/dev/null
 
+  # The connector runs as 'admin' (see User= in the unit) and opens its own log
+  # at WEYLAND_LOG_PATH=/var/log/weyland-mcp.log. If that file doesn't already
+  # exist, systemd creates it root-owned on first start (StandardOutput=append),
+  # the connector (admin) then can't open it, and it crash-loops forever on
+  # "[Errno 13] Permission denied". Pre-create it owned by admin so the very
+  # first start can write. Hardcode admin (NOT ${USER}, which is root under
+  # sudo) to match the service's User=.
+  sudo touch /var/log/weyland-mcp.log
+  sudo chown admin:admin /var/log/weyland-mcp.log
+  sudo chmod 0644 /var/log/weyland-mcp.log
+
   sudo systemctl daemon-reload
   sudo systemctl enable weyland-mcp.service
   sudo systemctl restart weyland-mcp.service
