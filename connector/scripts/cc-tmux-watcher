@@ -287,7 +287,20 @@ def fire_ctx_alert(threshold, pct):
         log(f"ctx-fire-skipped mode=off threshold={threshold} pct={pct}")
         return
     hard_stop = threshold >= 80
-    action = "HARD STOP — do not let CC cross 80%. Wrap up and restart CC now" if hard_stop else "reassess: keep going or plan a fresh CC session before 80%"
+    if hard_stop:
+        action = (
+            "HARD CEILING HIT. "
+            "1) Tell CC to commit and push all in-progress work. "
+            "2) Tell CC to write a handoff doc under handoffs/ (what done, what next). "
+            "3) Start a fresh CC session pointed at the handoff. "
+            "Do NOT let CC cross 80%. Technical call — never consult Julian."
+        )
+    else:
+        action = (
+            f"Reassess now: is remaining work light enough to finish before 80%? "
+            "If not — tell CC to commit, write a handoff doc under handoffs/, "
+            "then restart CC fresh. Act early; don't wait for the 80% ping."
+        )
     text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
     # Always ping the PC channel (chat-Claude).
     pc_url = read_kv(WAKE_ENV, "PC_WAKE_URL")
