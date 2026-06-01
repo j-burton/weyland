@@ -15,7 +15,7 @@ set -euo pipefail
 WEYLAND_REPO="https://github.com/j-burton/weyland.git"
 OWNER="j-burton"
 DEFAULT_DOMAIN_ROOT="julianburton.com"
-STATE_DIR="/var/lib/weyland"   # per-Pi state (PI_NAME, DOMAIN, etc.)
+STATE_DIR="${WEYLAND_STATE_DIR:-/var/lib/weyland}"   # per-Pi state (PI_NAME, DOMAIN, etc.)
 
 # Permanent PAT for weyland repo + secrets-vault access — lets minions update
 # their own bootstrap and read the vault. Never committed to this repo.
@@ -372,7 +372,7 @@ render_checklist() {
 # Starts dashboard.py BEFORE phase_preflight so the browser cockpit is alive
 # for the whole bootstrap. Best-effort: any failure leaves the pinned terminal
 # checklist as the working fallback. Skipped entirely under WEYLAND_PLAIN_CHECKLIST.
-WEYLAND_NONCE=""
+WEYLAND_NONCE="${WEYLAND_NONCE:-}"   # may be inherited on a start-over relaunch
 WEYLAND_DASH_URL=""
 WEYLAND_DASH_ACTIVE=""
 phase_dashboard_start() {
@@ -381,6 +381,23 @@ phase_dashboard_start() {
     return 0
   fi
   command -v python3 >/dev/null 2>&1 || { warn "python3 missing; dashboard skipped"; return 0; }
+
+  # Start-over relaunch: the operator clicked "Start over" in the wizard, so the
+  # already-running dashboard reset the state and re-exec'd us with its own nonce
+  # (WEYLAND_REUSE_DASHBOARD=1). It still owns $STATE_DIR/dashboard.pid and is
+  # serving on the same port, so we must NOT start a second server — just adopt
+  # the live one and fall straight through to phase_identity (which will wait on
+  # the browser again). Mirrors the tail of the normal branch below.
+  if [ -n "${WEYLAND_REUSE_DASHBOARD:-}" ] && [ -n "$WEYLAND_NONCE" ]; then
+    local ri
+    ri="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    WEYLAND_DASH_URL="http://${ri:-<this-pi-ip>}:${WEYLAND_DASH_PORT:-8080}?k=${WEYLAND_NONCE}"
+    WEYLAND_DASH_ACTIVE=1
+    echo "$$" > "$STATE_DIR/bootstrap.pid" 2>/dev/null || true
+    exec >>"$STATE_DIR/bootstrap.log" 2>&1
+    log "reusing live dashboard on :${WEYLAND_DASH_PORT:-8080} (start-over relaunch)"
+    return 0
+  fi
 
   local local_ip dash weyland_dir
   local_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -408,6 +425,7 @@ phase_dashboard_start() {
 
   nohup python3 "$dash" "$STATE_DIR" "$WEYLAND_NONCE" >"$STATE_DIR/dashboard.log" 2>&1 &
   echo $! > "$STATE_DIR/dashboard.pid"
+  echo "$$" > "$STATE_DIR/bootstrap.pid" 2>/dev/null || true   # so the wizard's "Start over" can stop us
   WEYLAND_DASH_ACTIVE=1
 
   # Terminal goes silent from here: phases, checklist and logs all live in the
@@ -1356,6 +1374,7 @@ EOF
 _cleanup() {
   _checklist_teardown
   phase_dashboard_stop
+  rm -f "$STATE_DIR/bootstrap.pid" 2>/dev/null || true
 }
 # Ctrl-C / SIGTERM / SSH hangup: clean up, kill any background children
 # (dashboard, run_dance watchers, tee, …) and DIE. The bootstrap must never

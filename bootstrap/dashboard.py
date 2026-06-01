@@ -8,6 +8,7 @@ ThreadingHTTPServer on 0.0.0.0:8080:
   GET  /state?k=N     -> state.json + {"identity_submitted": bool} (nonce-gated)
   POST /identity?k=N  -> validate + write identity.json (the browser identity form)
   POST /save-pat?k=N  -> validate github_pat_/ghp_, write /etc/weyland/weyland.env
+  POST /restart?k=N   -> stop the bootstrap, reset state, re-exec it (Start over)
   POST /done?k=N      -> 200 then shut down
 
 The bash side is the single writer of state.json; this server writes only
@@ -22,7 +23,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
+import socket
 import sys
+import tempfile
 import time
 import threading
 import subprocess
@@ -44,14 +48,42 @@ _last = [time.time()]
 _srv = [None]
 
 
+# Phase (name, label) list — mirrors install.sh's _state_op PHASES exactly, so a
+# /restart can reset state.json to the identity stage without the bash side.
+PHASES = [
+    ("preflight", "The forge is inspected"),
+    ("identity", "The minion receives its name"),
+    ("packages", "Tools of war are gathered"),
+    ("tailscale", "The minion enters the realm"),
+    ("github_auth", "GitHub demands tribute"),
+    ("per_pi_repo", "The chronicles are opened"),
+    ("tunnel", "The passage through the void is opened"),
+    ("claude_code", "The intelligence is summoned"),
+    ("connector", "The connector is forged"),
+    ("vault", "The ancient secrets are retrieved"),
+    ("selfdoc", "The minion speaks its name"),
+    ("summary", "The induction is sealed"),
+]
+
+
+def _valid_name(n: str) -> bool:
+    return bool(NAME_RE.match(n)) and n != "raspberrypi"
+
+
 def state_with_flags() -> bytes:
-    """state.json verbatim, plus identity_submitted (without writing state.json)."""
+    """state.json verbatim, plus identity_submitted + this Pi's current hostname.
+
+    hostname lets the browser pre-fill the name field on a fresh/started-over Pi
+    (the operator keeps or edits it); never written to state.json here.
+    """
     try:
         with open(STATE_FILE) as f:
             s = json.load(f)
     except Exception:
         s = {}
     s["identity_submitted"] = os.path.exists(IDENTITY_FILE)
+    host = (socket.gethostname() or "").strip().lower()
+    s["hostname"] = host if _valid_name(host) else ""
     return json.dumps(s).encode("utf-8")
 
 
@@ -97,6 +129,132 @@ def write_pat(pat: str) -> bool:
     subprocess.run(["sudo", "-n", "chown", "root:admin", ENV_FILE], capture_output=True)
     subprocess.run(["sudo", "-n", "chmod", "0640", ENV_FILE], capture_output=True)
     return True
+
+
+# ---------------------------------------------------------------------------
+# /restart — "Start over": stop the running bootstrap, wipe identity, reset
+# state.json to the identity stage, then re-exec the bootstrap so it ADOPTS this
+# same dashboard (same nonce/port → the open browser tab keeps working) and
+# waits for the operator to name the minion again. The bash side is the normal
+# sole writer of state.json; we only touch it here while tearing the bootstrap
+# down and relaunching it.
+# ---------------------------------------------------------------------------
+DASH_PID_FILE = os.path.join(STATE_DIR, "dashboard.pid")
+BOOTSTRAP_PID_FILE = os.path.join(STATE_DIR, "bootstrap.pid")
+STATE_ENV_FILE = os.path.join(STATE_DIR, "env")
+
+
+def _kill_bootstrap() -> None:
+    """SIGTERM the running bootstrap, if any. Guarded against PID reuse: only
+    kills a process whose cmdline actually mentions install.sh."""
+    try:
+        pid = int(open(BOOTSTRAP_PID_FILE).read().strip())
+    except Exception:
+        return
+    if pid <= 1 or pid == os.getpid():
+        return
+    try:
+        cmdline = open("/proc/%d/cmdline" % pid, "rb").read().decode("utf-8", "replace")
+    except OSError:
+        return  # already gone (or unreadable) — nothing to kill
+    if "install.sh" not in cmdline:
+        return  # PID was reused by something else — leave it alone
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except OSError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+
+def _clear_identity_env() -> None:
+    """Drop PI_NAME=/DOMAIN= from $STATE_DIR/env so the relaunched bootstrap
+    asks for identity again instead of treating it as a re-run."""
+    try:
+        with open(STATE_ENV_FILE) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        r = subprocess.run(["sudo", "-n", "cat", STATE_ENV_FILE], capture_output=True, text=True)
+        if r.returncode != 0:
+            return
+        lines = r.stdout.splitlines()
+    kept = [ln for ln in lines if not (ln.startswith("PI_NAME=") or ln.startswith("DOMAIN="))]
+    content = ("\n".join(kept) + "\n") if kept else ""
+    try:
+        with open(STATE_ENV_FILE, "w") as f:
+            f.write(content)
+    except OSError:
+        subprocess.run(["sudo", "-n", "tee", STATE_ENV_FILE], input=content,
+                       text=True, capture_output=True)
+
+
+def _reset_state_identity() -> None:
+    """Rewrite state.json back to the fresh identity stage (mirrors install.sh
+    state_init), preserving local_ip."""
+    try:
+        with open(STATE_FILE) as f:
+            old = json.load(f)
+    except Exception:
+        old = {}
+    ip = old.get("local_ip", "") if isinstance(old, dict) else ""
+    s = {
+        "pi_name": "", "domain": "", "local_ip": ip,
+        "phases": [{"name": n, "label": l, "status": "pending"} for n, l in PHASES],
+        "action": {"active": False},
+        "result": {"ready": False, "bearer": "", "mcp_url": "", "consent_tunnel": "",
+                   "consent_local": "", "client_id": "weyland-mcp-claude-ai",
+                   "repo": "", "project_instructions": ""},
+    }
+    d = os.path.dirname(STATE_FILE) or "."
+    fd, tmp = tempfile.mkstemp(dir=d)
+    with os.fdopen(fd, "w") as f:
+        json.dump(s, f)
+    os.replace(tmp, STATE_FILE)
+
+
+def _relaunch_bootstrap() -> bool:
+    """Re-exec install.sh detached, told to adopt this dashboard (same nonce)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    install_sh = os.environ.get("WEYLAND_INSTALL_SH") or os.path.join(here, "install.sh")
+    if not os.path.isfile(install_sh):
+        return False
+    env = dict(os.environ)
+    env["WEYLAND_REUSE_DASHBOARD"] = "1"
+    env["WEYLAND_NONCE"] = NONCE
+    env["WEYLAND_STATE_DIR"] = STATE_DIR
+    env["WEYLAND_DASH_PORT"] = str(PORT)
+    try:
+        subprocess.Popen(["bash", install_sh], env=env, cwd=here,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return True
+    except Exception:
+        return False
+
+
+def do_restart() -> None:
+    # The dying bootstrap's EXIT trap runs phase_dashboard_stop, which reads
+    # dashboard.pid and SIGTERMs it — i.e. it would kill US. Hide the pid file
+    # while we tear the bootstrap down, then restore it (pointing at this very
+    # process) so the relaunched bootstrap sees the dashboard as live.
+    try:
+        os.remove(DASH_PID_FILE)
+    except OSError:
+        pass
+    _kill_bootstrap()
+    try:
+        os.remove(IDENTITY_FILE)
+    except OSError:
+        pass
+    _clear_identity_env()
+    _reset_state_identity()
+    try:
+        with open(DASH_PID_FILE, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    _relaunch_bootstrap()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -153,6 +311,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok = write_pat(pat)
             self._send(200 if ok else 500, b"ok" if ok else b"write failed")
+        elif path == "/restart":
+            do_restart()
+            self._send(200, b"restarting")
         elif path == "/done":
             self._send(200, b"sealed")
             threading.Thread(target=self._shutdown, daemon=True).start()
@@ -289,6 +450,11 @@ HTML = r"""<!doctype html>
   .details{flex:0 0 auto; margin-top:12px}
   .disclose{width:100%; text-align:center; background:#1b212a; color:var(--muted); border:1px solid var(--line2); border-radius:9px; padding:12px; font-family:var(--mono); font-size:11.5px; letter-spacing:.2em; text-transform:uppercase; cursor:pointer}
   .disclose:hover{color:var(--flame-bright); border-color:var(--flame)}
+  /* "Start over" — small, unobtrusive; a quiet escape hatch, not a CTA */
+  .restartbar{display:none; text-align:center; margin:16px 0 2px}
+  .startover{background:none; border:0; color:var(--muted); font-family:var(--mono); font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; cursor:pointer; opacity:.55; padding:6px 10px; transition:opacity .15s,color .15s}
+  .startover:hover{opacity:1; color:#e08a7a}
+  .startover[disabled]{cursor:default; opacity:.4}
   .panel{display:none; border:1px solid var(--line2); border-top:0; border-radius:0 0 12px 12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:16px; margin-top:-6px}
   body.details-open .panel{display:block} body.details-open .disclose{border-radius:12px 12px 0 0; color:var(--flame-bright); border-color:var(--flame)}
   .field{margin:12px 0} .field:first-child{margin-top:0}
@@ -376,6 +542,10 @@ HTML = r"""<!doctype html>
     </div>
 
     <div class="gate" id="gate" style="display:none">open the link the forge revealed to you, my Lord &mdash; it bears the key to this rite</div>
+
+    <div class="restartbar" id="restartbar">
+      <button class="startover" id="startover" type="button">&#8635; Start over &mdash; unname the minion</button>
+    </div>
   </div>
 
 <script>
@@ -396,6 +566,7 @@ HTML = r"""<!doctype html>
     anthropic:{t:"THE INTELLIGENCE AWAITS AWAKENING", s:"the ancient mind will not stir without your blessing", b:"Summon Claude into service →", i:"grant leave · speak the words · the intelligence awakens"}
   };
   var submitted=false;
+  var nameTouched=false;   // true once the operator types in the name field
   function $(id){return document.getElementById(id);}
   function txt(id,v){var e=$(id); if(e) e.textContent=v==null?"":v;}
   function setval(id,v){var e=$(id); if(e) e.value=v==null?"":v;}
@@ -422,7 +593,17 @@ HTML = r"""<!doctype html>
     var stage = ready?"complete":(inBind?"binding":"identity");
     document.body.setAttribute("data-state", stage);
     var pn=(s.pi_name&&s.pi_name.length)?s.pi_name:(liveName()||"the minion");
-    if(stage==="identity"){ setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext","answer the call, my Lord — name the minion"); }
+    if(stage==="identity"){
+      // Pre-fill the name with this Pi's current hostname (or a prior name) so
+      // the operator can keep or edit it — only while the field is untouched and
+      // empty, so we never clobber what they're typing.
+      var inp=$("i-name");
+      if(inp && !nameTouched && !inp.value){
+        var pre=((s.pi_name||s.hostname||"")+"").trim().toLowerCase();
+        if(/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(pre) && pre!=="raspberrypi"){ inp.value=pre; }
+      }
+      setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext","answer the call, my Lord — name the minion");
+    }
     else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow","The rite is complete"); txt("subtext","forged in steel · sworn by ancient oath · the Old One's will is done"); }
     else { setName(s.pi_name||pn); txt("eyebrow","A binding is upon us"); txt("subtext","Weyland's hammer falls — "+(s.pi_name||pn)+" shall be bound, Master"); }
 
@@ -449,6 +630,10 @@ HTML = r"""<!doctype html>
     var running = (s.phases||[]).some(function(p){ return p.status==="running"; });
     document.body.classList.toggle("forge-active", stage==="binding" && running && !authShown);
 
+    // Start over: only meaningful once a binding is under way or complete (the
+    // identity stage has nothing to reset). Hidden otherwise.
+    $("restartbar").style.display = (stage==="binding"||stage==="complete") ? "" : "none";
+
     var d=$("details");
     if(ready){ d.style.display=""; var r=s.result;
       txt("f-url",r.mcp_url); txt("f-cid",r.client_id||"weyland-mcp-claude-ai"); txt("f-bearer",r.bearer);
@@ -461,7 +646,7 @@ HTML = r"""<!doctype html>
       .then(function(res){ if(res.status===403){gate(); return null;} return res.json(); })
       .then(function(j){ if(j) applyState(j); }).catch(function(){});
   }
-  $("i-name").addEventListener("input", function(){ if(document.body.getAttribute("data-state")==="identity") setName(liveName()); });
+  $("i-name").addEventListener("input", function(){ nameTouched=true; if(document.body.getAttribute("data-state")==="identity") setName(liveName()); });
   $("begin").addEventListener("click", function(){
     var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg");
     if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
@@ -495,6 +680,19 @@ HTML = r"""<!doctype html>
       .catch(function(){m.className="patmsg err"; m.textContent="the forge could not be reached";});
   });
   $("seal").addEventListener("click", function(){ this.textContent="⚒ the minion is bound"; this.disabled=true; fetch("/done?k="+encodeURIComponent(K),{method:"POST"}).catch(function(){}); });
+  $("startover").addEventListener("click", function(){
+    if(!confirm("Start over? This stops the current rite and returns to naming the minion. Nothing already installed is undone.")) return;
+    var b=this; b.disabled=true; b.innerHTML="&#8635; starting over…";
+    fetch("/restart?k="+encodeURIComponent(K),{method:"POST"})
+      .then(function(){
+        // The bootstrap reset state + relaunched; drop our local stage memory so
+        // applyState recomputes from the fresh (identity) state, and clear the
+        // name field so the prefill can repopulate it.
+        submitted=false; nameTouched=false; var inp=$("i-name"); if(inp) inp.value="";
+        setTimeout(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; tick(); }, 700);
+      })
+      .catch(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; });
+  });
   tick(); setInterval(tick, 1500);
 </script>
 </body>
