@@ -46,6 +46,9 @@ STALL_HARD_CAP = 120  # seconds
 
 PAT_RE = re.compile(r"^(github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]+)$")
 NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
+# An SSH public key pasted into the identity form. Kept in lockstep with the
+# client's SSH_PUBKEY_RE so the paste box and this handler agree on what's valid.
+SSH_PUBKEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9-]+) AAAA[0-9A-Za-z+/=]+")
 
 _last = [time.time()]
 _srv = [None]
@@ -259,6 +262,10 @@ def write_identity(form) -> bool:
         mode = "none"
     pub_raw = form.get("ssh_pub_key", [""])[0] or ""
     ssh_pub_key = next((ln.strip() for ln in pub_raw.splitlines() if ln.strip()), "")
+    # A pasted key must be a real public key (the install side imports it into
+    # authorized_keys). Reject an invalid paste so it can't silently advance.
+    if ssh_pub_key and not SSH_PUBKEY_RE.match(ssh_pub_key):
+        return False
     data = {
         "pi_name": name,
         "domain": (form.get("domain", [""])[0] or "").strip(),
@@ -594,6 +601,9 @@ HTML = r"""<!doctype html>
   .ssh-opt b{font-weight:700}
   .ssh-od{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--leather); margin-left:auto}
   .ssh-panel{margin-top:11px; padding:13px; border:1px solid var(--line2); border-radius:10px; background:linear-gradient(180deg,var(--steel2),var(--steel))}
+  /* per-OS command label above each click-to-copy command box */
+  .cmd-os{font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:9px 0 4px}
+  .copybox .val.cmd{font-size:12px}
   .btn-ghost{-webkit-appearance:none; appearance:none; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--flame-bright); background:#11161c; border:1px solid var(--flame); border-radius:9px; padding:11px 15px; text-align:center}
   .btn-ghost:hover{background:#1c1206} .btn-ghost:active{transform:translateY(1px)} .btn-ghost[disabled]{opacity:.5; cursor:default}
   .btn-ghost.dl{display:inline-flex; flex-direction:column; gap:2px; min-width:170px}
@@ -777,19 +787,18 @@ HTML = r"""<!doctype html>
           <label>SSH access <span class="opt">&middot; optional &middot; password login stays enabled either way</span></label>
           <div class="ssh-opts">
             <label class="ssh-opt"><input type="radio" name="sshmode" value="none" checked> <b>Skip</b> <span class="ssh-od">no SSH changes</span></label>
-            <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Use existing key</b> <span class="ssh-od">pick your .pub file</span></label>
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Use existing key</b> <span class="ssh-od">paste your public key</span></label>
             <label class="ssh-opt"><input type="radio" name="sshmode" value="generate"> <b>Generate new key</b> <span class="ssh-od">made in your browser</span></label>
           </div>
 
           <div class="ssh-panel" id="ssh-existing" style="display:none">
-            <button class="btn-ghost" type="button" id="ssh-pick">Choose public-key file&hellip;</button>
-            <input type="file" id="ssh-file" accept=".pub,text/plain" style="display:none">
-            <p class="ssh-hint">your key usually lives here &mdash; click to copy the path, then paste it into the file picker:</p>
-            <div class="chips">
-              <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh">Windows: %USERPROFILE%\.ssh\id_rsa.pub</button>
-              <button class="chip" type="button" data-copy-text="~/.ssh/id_rsa.pub">Mac: ~/.ssh/id_rsa.pub</button>
-            </div>
-            <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
+            <p class="ssh-hint">run this in your terminal to print your public key &mdash; it makes one if you don't have it yet &mdash; then paste the output below:</p>
+            <div class="cmd-os">macOS / Linux</div>
+            <div class="copybox"><code class="val cmd" id="ssh-cmd-nix">cat ~/.ssh/id_ed25519.pub 2>/dev/null || { ssh-keygen -t ed25519 -C "$USER@$(hostname)" -N "" -f ~/.ssh/id_ed25519 -q &amp;&amp; cat ~/.ssh/id_ed25519.pub; }</code><button class="copy" data-copy="ssh-cmd-nix" type="button">Copy</button></div>
+            <div class="cmd-os">Windows PowerShell</div>
+            <div class="copybox"><code class="val cmd" id="ssh-cmd-win">if(Test-Path "$env:USERPROFILE\.ssh\id_ed25519.pub"){Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"}else{ssh-keygen -t ed25519 -C "$env:USERNAME@$env:COMPUTERNAME" -N '""' -f "$env:USERPROFILE\.ssh\id_ed25519";Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"}</code><button class="copy" data-copy="ssh-cmd-win" type="button">Copy</button></div>
+            <div class="frow" style="margin-top:11px"><label for="ssh-paste">Paste the public key</label>
+              <textarea id="ssh-paste" rows="3" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
             <p class="ssh-status" id="ssh-existing-status"></p>
           </div>
 
@@ -1068,7 +1077,7 @@ HTML = r"""<!doctype html>
     if(!NAME_OK.test(nm)){ showFormPage(1); var m1=$("fmsg1"); m1.style.color="#e88"; m1.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
     var pw=$("i-pw").value, pw2=$("i-pw2").value;
     if(pw && pw!==pw2){ showFormPage(2); var m2=$("fmsg2"); m2.style.color="#e88"; m2.textContent="the passwords do not match, my Lord"; return; }
-    if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="choose your public-key (.pub) file first, my Lord"; return; }
+    if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="paste your public key first, my Lord"; return; }
     if(sshMode==="generate" && !sshPubKey){ m.style.color="#e88"; m.textContent="generate a key first — and save both downloads"; return; }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
     var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
@@ -1162,7 +1171,9 @@ HTML = r"""<!doctype html>
   // getRandomValues + TweetNaCl do not). Private key NEVER leaves the browser —
   // only the public key is POSTed. Formats validated against ssh-keygen+puttygen.
   var sshMode="none", sshPubKey="", genPriv="", genPpk="";
-  var SSHKEY_RE=/^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-\S+|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-\S+)\s+\S+/;
+  // Mirrors the server's SSH_PUBKEY_RE exactly, so what the paste box accepts is
+  // precisely what POST /identity accepts (no client-ok / server-reject mismatch).
+  var SSH_PUBKEY_RE=/^(ssh-ed25519|ssh-rsa|ecdsa-sha2-[a-z0-9-]+) AAAA[0-9A-Za-z+/=]+/;
   function _u32(n){return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]);}
   function _cat(a){var L=0,i;for(i=0;i<a.length;i++)L+=a[i].length;var o=new Uint8Array(L),p=0;for(i=0;i<a.length;i++){o.set(a[i],p);p+=a[i].length;}return o;}
   function _sb(s){return new TextEncoder().encode(s);}
@@ -1232,20 +1243,21 @@ HTML = r"""<!doctype html>
     sshMode=mode;
     $("ssh-existing").style.display = mode==="existing"?"":"none";
     $("ssh-generate").style.display = mode==="generate"?"":"none";
-    if(mode==="none") sshPubKey="";   // existing/generate keep whatever was loaded
+    if(mode==="none") sshPubKey="";          // existing/generate keep whatever was loaded
+    else if(mode==="existing") validatePaste();   // re-derive from the paste box
   }
   document.querySelectorAll('input[name="sshmode"]').forEach(function(r){ r.addEventListener("change", function(){ if(this.checked) setSshMode(this.value); }); });
-  $("ssh-pick").addEventListener("click", function(){ $("ssh-file").click(); });
-  $("ssh-file").addEventListener("change", function(){
-    var f=this.files&&this.files[0], st=$("ssh-existing-status"); if(!f) return;
-    var rd=new FileReader();
-    rd.onload=function(){
-      var line=((rd.result||"")+"").split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean)[0]||"";
-      if(SSHKEY_RE.test(line)){ sshPubKey=line; st.className="ssh-status ok"; st.textContent="✓ public key loaded from "+f.name; }
-      else { sshPubKey=""; st.className="ssh-status err"; st.textContent="that file isn't an SSH public key (look for one ending .pub)"; }
-    };
-    rd.readAsText(f);
-  });
+  // Paste-box import: take the first non-empty line (a public key is one line),
+  // validate it, and stash it in sshPubKey. The private key never touches the
+  // page. Re-validated on switch back to "existing" so a stale paste can't pass.
+  function validatePaste(){
+    var ta=$("ssh-paste"), st=$("ssh-existing-status"); if(!ta||!st) return;
+    var line=((ta.value||"")+"").split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean)[0]||"";
+    if(!line){ sshPubKey=""; st.className="ssh-status"; st.textContent=""; return; }
+    if(SSH_PUBKEY_RE.test(line)){ sshPubKey=line; st.className="ssh-status ok"; st.textContent="✓ public key looks valid"; }
+    else { sshPubKey=""; st.className="ssh-status err"; st.textContent="that isn't an SSH public key — paste the line starting ssh-ed25519 / ssh-rsa / ecdsa-…"; }
+  }
+  $("ssh-paste").addEventListener("input", validatePaste);
   $("ssh-gen").addEventListener("click", function(){
     var st=$("ssh-gen-status"), btn=this;
     if(typeof nacl==="undefined"||!nacl.sign){ st.className="ssh-status err"; st.textContent="the key generator didn't load — use 'Use existing key' instead"; return; }
