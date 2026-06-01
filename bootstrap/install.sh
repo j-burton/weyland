@@ -1055,9 +1055,13 @@ ingress:
   - service: http_status:404
 EOF
 
-  # Step 4: DNS route.
+  # Step 4: DNS route. Use --overwrite-dns so a RE-RUN re-points the hostname
+  # at the CURRENT tunnel. Without it, if an earlier tunnel was created (and
+  # later deleted/recreated), the CNAME keeps pointing at the now-dead tunnel
+  # id while cloudflared serves the live one -> Cloudflare error 1033 ("no
+  # tunnel for this hostname") even though everything looks healthy locally.
   log "routing ${DOMAIN} -> tunnel ${tunnel_name}"
-  cloudflared tunnel route dns "$tunnel_name" "$DOMAIN" \
+  cloudflared tunnel route dns --overwrite-dns "$tunnel_name" "$DOMAIN" \
     || warn "DNS route may already exist (or zone not selected); continuing"
 
   # Step 5: install + start cloudflared as a systemd service.
