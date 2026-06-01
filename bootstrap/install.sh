@@ -551,14 +551,15 @@ except Exception:
     d = {}
 for k in ("pi_name", "domain", "pc_wake", "wake_token"):
     print(str(d.get(k, "") or "").strip())
-# new_password: verbatim (spaces may be intentional). ssh_key: single line.
+# new_password: verbatim (spaces may be intentional). ssh fields: single line.
 print(str(d.get("new_password", "") or ""))
-print(str(d.get("ssh_key", "") or "").strip())
+print(str(d.get("ssh_mode", "none") or "none").strip())
+print(str(d.get("ssh_pub_key", "") or "").strip())
 PY
   )
   PI_NAME="${_vals[0]:-}"; DOMAIN="${_vals[1]:-}"
   IDENT_PC_HOST="${_vals[2]:-}"; IDENT_WAKE_TOK="${_vals[3]:-}"
-  IDENT_NEW_PASSWORD="${_vals[4]:-}"; IDENT_SSH_KEY="${_vals[5]:-}"
+  IDENT_NEW_PASSWORD="${_vals[4]:-}"; IDENT_SSH_MODE="${_vals[5]:-none}"; IDENT_SSH_PUB_KEY="${_vals[6]:-}"
   if ! [[ "$PI_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
     warn "the wizard returned an invalid name ('${PI_NAME}') — prompting in the terminal."
     _identity_from_terminal "$default_name"
@@ -567,15 +568,15 @@ PY
   fi
 }
 
-# Import an SSH public key for the service user and switch SSH to key-only auth.
-# Heavily guarded: we VALIDATE the key looks real and that sshd accepts the new
-# config BEFORE disabling password auth, so a bad key can never lock the operator
-# out. No-op for an unrecognised key.
+# Import an SSH public key into the service user's authorized_keys (dedup, right
+# perms). VALIDATES the key looks real first; no-op for an unrecognised one.
+# Password auth is left UNCHANGED on purpose — SSH prefers the key when present
+# and the operator keeps a password fallback on machines without it.
 _import_ssh_key() {
   local key="$1"
   case "$key" in
     ssh-ed25519\ *|ssh-rsa\ *|ssh-dss\ *|ecdsa-sha2-*\ *|sk-ssh-ed25519@openssh.com\ *|sk-ecdsa-sha2-*\ *) : ;;
-    *) warn "imported SSH key is not a recognised public key — skipping (SSH unchanged)"; return 0 ;;
+    *) warn "imported SSH key is not a recognised public key — skipping"; return 0 ;;
   esac
   local ak="${HOME}/.ssh/authorized_keys"
   mkdir -p "${HOME}/.ssh" && chmod 700 "${HOME}/.ssh"
@@ -584,24 +585,6 @@ _import_ssh_key() {
     log "SSH key already present in authorized_keys"
   else
     printf '%s\n' "$key" >> "$ak" && log "SSH public key imported to authorized_keys"
-  fi
-  # Disable password auth. A drop-in named 00-* is read before cloud-init's
-  # 50-*.conf (sshd uses the first value), so it reliably wins; we also patch
-  # the main file. Validate with `sshd -t` and revert if it would break sshd.
-  local dropin="/etc/ssh/sshd_config.d/00-weyland-keyonly.conf"
-  [ -d /etc/ssh/sshd_config.d ] && printf 'PasswordAuthentication no\n' | sudo tee "$dropin" >/dev/null
-  if sudo grep -qE '^[#[:space:]]*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null; then
-    sudo sed -i -E 's/^[#[:space:]]*PasswordAuthentication[[:space:]].*/PasswordAuthentication no/' /etc/ssh/sshd_config
-  else
-    printf 'PasswordAuthentication no\n' | sudo tee -a /etc/ssh/sshd_config >/dev/null
-  fi
-  if sudo sshd -t 2>/dev/null; then
-    sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null \
-      || sudo systemctl restart ssh 2>/dev/null || true
-    log "SSH password auth disabled — key-only login is now in force"
-  else
-    warn "sshd config test failed — reverting key-only change to avoid lockout"
-    sudo rm -f "$dropin" 2>/dev/null || true
   fi
 }
 
@@ -626,7 +609,7 @@ phase_identity() {
   fi
 
   # Gather identity from the browser when the wizard is live, else the terminal.
-  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""; IDENT_NEW_PASSWORD=""; IDENT_SSH_KEY=""
+  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""; IDENT_NEW_PASSWORD=""; IDENT_SSH_MODE="none"; IDENT_SSH_PUB_KEY=""
   if _dashboard_active; then
     _identity_from_browser "$default_name"
   else
@@ -668,9 +651,10 @@ phase_identity() {
     fi
   fi
 
-  # Optional: import an SSH public key and switch SSH to key-only auth.
-  if [ -n "${IDENT_SSH_KEY:-}" ]; then
-    _import_ssh_key "$IDENT_SSH_KEY"
+  # Optional: import an SSH public key (existing or browser-generated). Password
+  # auth is intentionally left enabled (see _import_ssh_key).
+  if [ "${IDENT_SSH_MODE:-none}" != "none" ] && [ -n "${IDENT_SSH_PUB_KEY:-}" ]; then
+    _import_ssh_key "$IDENT_SSH_PUB_KEY"
   fi
 
   # Scrub the plaintext password out of identity.json now that it's applied, so

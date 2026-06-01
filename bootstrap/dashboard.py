@@ -212,17 +212,21 @@ def write_identity(form) -> bool:
     if not NAME_RE.match(name):
         return False
     # SSH public keys are a single line; take the first non-empty line so a
-    # paste with a trailing newline stays one line (the bash side reads this
-    # positionally). The password is taken verbatim (spaces may be intentional).
-    ssh_raw = form.get("ssh_key", [""])[0] or ""
-    ssh_key = next((ln.strip() for ln in ssh_raw.splitlines() if ln.strip()), "")
+    # paste/upload with a trailing newline stays one line (the bash side reads
+    # this positionally). The password is taken verbatim (spaces may matter).
+    mode = (form.get("ssh_mode", ["none"])[0] or "none").strip()
+    if mode not in ("none", "existing", "generate"):
+        mode = "none"
+    pub_raw = form.get("ssh_pub_key", [""])[0] or ""
+    ssh_pub_key = next((ln.strip() for ln in pub_raw.splitlines() if ln.strip()), "")
     data = {
         "pi_name": name,
         "domain": (form.get("domain", [""])[0] or "").strip(),
         "pc_wake": (form.get("pc_wake", [""])[0] or "").strip(),
         "wake_token": (form.get("wake_token", [""])[0] or "").strip(),
         "new_password": form.get("new_password", [""])[0] or "",
-        "ssh_key": ssh_key,
+        "ssh_mode": mode,
+        "ssh_pub_key": ssh_pub_key,
     }
     d = os.path.dirname(IDENTITY_FILE) or "."
     tmp = os.path.join(d, ".identity.tmp")
@@ -541,6 +545,34 @@ HTML = r"""<!doctype html>
   .frow textarea:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
   .pair{display:grid; grid-template-columns:1fr 1fr; gap:12px} @media (max-width:560px){.pair{grid-template-columns:1fr}}
   .fmsg{font-family:var(--mono); font-size:11px; letter-spacing:.08em; margin:10px 0 0; min-height:14px; color:#e88}
+  /* SSH access section (skip / use existing / generate) */
+  .ssh-sec>label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 8px}
+  .ssh-opts{display:flex; flex-direction:column; gap:7px}
+  .ssh-opt{display:flex; align-items:baseline; gap:9px; font-family:var(--serif); font-size:14px; color:var(--ink); cursor:pointer; padding:8px 11px; border:1px solid var(--line2); border-radius:9px; background:#1a212a}
+  .ssh-opt:hover{border-color:var(--flame)}
+  .ssh-opt input{accent-color:var(--flame); margin:0}
+  .ssh-opt b{font-weight:700}
+  .ssh-od{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--leather); margin-left:auto}
+  .ssh-panel{margin-top:11px; padding:13px; border:1px solid var(--line2); border-radius:10px; background:linear-gradient(180deg,var(--steel2),var(--steel))}
+  .btn-ghost{-webkit-appearance:none; appearance:none; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--flame-bright); background:#11161c; border:1px solid var(--flame); border-radius:9px; padding:11px 15px; text-align:center}
+  .btn-ghost:hover{background:#1c1206} .btn-ghost:active{transform:translateY(1px)} .btn-ghost[disabled]{opacity:.5; cursor:default}
+  .btn-ghost.dl{display:inline-flex; flex-direction:column; gap:2px; min-width:170px}
+  .dlsub{font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--leather)}
+  .ssh-hint{font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather); margin:11px 0 7px}
+  .chips{display:flex; flex-wrap:wrap; gap:7px}
+  .chip{font-family:var(--mono); font-size:10.5px; color:var(--ink); background:#11161c; border:1px dashed var(--line); border-radius:7px; padding:6px 9px; cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .chip:hover{border-color:var(--flame); color:var(--flame-bright)} .chip.ok{border-style:solid; border-color:#6e5212; color:var(--gold)}
+  .ssh-status{font-family:var(--mono); font-size:11px; letter-spacing:.04em; margin:9px 0 0; min-height:13px; color:var(--muted)}
+  .ssh-status.ok{color:var(--gold)} .ssh-status.err{color:#e88}
+  .ssh-warn{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:#ffcf8a; background:#241a08; border:1px solid #5a4a20; border-radius:8px; padding:8px 10px; margin:0 0 11px}
+  .dlrow{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 11px}
+  .howto{margin-top:6px; border-top:1px solid var(--line2); padding-top:11px}
+  .tabs{display:flex; gap:6px; margin-bottom:9px}
+  .tab{-webkit-appearance:none; appearance:none; cursor:pointer; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:#11161c; border:1px solid var(--line2); border-radius:7px; padding:6px 11px}
+  .tab[aria-pressed="true"]{color:#180c02; background:linear-gradient(180deg,var(--flame-bright),var(--flame-deep)); border-color:var(--flame); font-weight:700}
+  .tabpane{font-family:var(--serif); font-size:13px; color:var(--ink)}
+  .tabpane code{font-family:var(--mono); font-size:12px; color:var(--flame-bright); background:#11161c; border:1px solid var(--line2); border-radius:6px; padding:2px 7px; display:inline-block; margin-bottom:5px}
+  .tabpane p{margin:5px 0 0; color:var(--leather); font-size:12.5px}
   .roster{list-style:none; margin:0; padding:0}
   .roster li{display:flex; flex-wrap:wrap; align-items:center; gap:11px; padding:4px 6px; border-bottom:1px solid #2e3744}
   .roster li:last-child{border-bottom:0}
@@ -665,8 +697,54 @@ HTML = r"""<!doctype html>
           <div class="frow"><label for="i-pw2">Confirm password</label>
             <input id="i-pw2" type="password" autocomplete="new-password" placeholder="re-enter to confirm"></div>
         </div>
-        <div class="frow"><label for="i-ssh">Import SSH public key <span class="opt">&middot; optional &middot; disables password login</span></label>
-          <textarea id="i-ssh" rows="2" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA&hellip;  (paste a public key for key-only SSH)"></textarea></div>
+        <div class="frow ssh-sec">
+          <label>SSH access <span class="opt">&middot; optional &middot; password login stays enabled either way</span></label>
+          <div class="ssh-opts">
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="none" checked> <b>Skip</b> <span class="ssh-od">no SSH changes</span></label>
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Use existing key</b> <span class="ssh-od">pick your .pub file</span></label>
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="generate"> <b>Generate new key</b> <span class="ssh-od">made in your browser</span></label>
+          </div>
+
+          <div class="ssh-panel" id="ssh-existing" style="display:none">
+            <button class="btn-ghost" type="button" id="ssh-pick">Choose public-key file&hellip;</button>
+            <input type="file" id="ssh-file" accept=".pub,text/plain" style="display:none">
+            <p class="ssh-hint">your key usually lives here &mdash; click to copy the path, then paste it into the file picker:</p>
+            <div class="chips">
+              <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\id_rsa.pub">Windows: C:\Users\&lt;name&gt;\.ssh\id_rsa.pub</button>
+              <button class="chip" type="button" data-copy-text="~/.ssh/id_rsa.pub">Mac: ~/.ssh/id_rsa.pub</button>
+            </div>
+            <p class="ssh-status" id="ssh-existing-status"></p>
+          </div>
+
+          <div class="ssh-panel" id="ssh-generate" style="display:none">
+            <button class="btn-ghost" type="button" id="ssh-gen">&#9881; Generate key</button>
+            <div id="ssh-gen-result" style="display:none">
+              <p class="ssh-warn">&#9888; Save these keys now &mdash; you will not see them again.</p>
+              <div class="dlrow">
+                <button class="btn-ghost dl" type="button" id="dl-openssh">&#8595; id_ed25519 <span class="dlsub">Mac / PowerShell</span></button>
+                <div class="chips">
+                  <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\">save in &mdash; Windows: C:\Users\&lt;name&gt;\.ssh\</button>
+                  <button class="chip" type="button" data-copy-text="~/.ssh/">Mac: ~/.ssh/</button>
+                </div>
+              </div>
+              <div class="dlrow">
+                <button class="btn-ghost dl" type="button" id="dl-ppk">&#8595; id_ed25519.ppk <span class="dlsub">PuTTY (no PuTTYgen)</span></button>
+                <div class="chips"><button class="chip" type="button" data-copy-text="">save anywhere &mdash; PuTTY lets you browse to it</button></div>
+              </div>
+              <div class="howto">
+                <div class="tabs">
+                  <button class="tab" type="button" data-tab="mac" aria-pressed="true">Mac</button>
+                  <button class="tab" type="button" data-tab="win" aria-pressed="false">Windows</button>
+                  <button class="tab" type="button" data-tab="putty" aria-pressed="false">PuTTY</button>
+                </div>
+                <div class="tabpane" data-pane="mac"><code>ssh admin@<span class="howto-name">minion</span>.local</code><p>save <b>id_ed25519</b> to <code>~/.ssh/</code> &mdash; it's picked up automatically.</p></div>
+                <div class="tabpane" data-pane="win" style="display:none"><code>ssh admin@<span class="howto-name">minion</span>.local</code><p>save <b>id_ed25519</b> to <code>%USERPROFILE%\.ssh\</code> &mdash; PowerShell uses it automatically.</p></div>
+                <div class="tabpane" data-pane="putty" style="display:none"><p>PuTTY &rarr; Connection &rarr; SSH &rarr; Auth &rarr; <i>browse to the .ppk file</i>. Host: <code>admin@<span class="howto-name">minion</span>.local</code></p></div>
+              </div>
+            </div>
+            <p class="ssh-status" id="ssh-gen-status"></p>
+          </div>
+        </div>
         <button class="btn btn-fire btn-block" type="button" id="begin">Begin the rite &rarr;</button>
         <p class="fmsg" id="fmsg"></p>
       </section>
@@ -725,6 +803,7 @@ HTML = r"""<!doctype html>
     </div>
   </div>
 
+<script>!function(i){"use strict";var m=function(r,n){this.hi=0|r,this.lo=0|n},v=function(r){var n,e=new Float64Array(16);if(r)for(n=0;n<r.length;n++)e[n]=r[n];return e},a=function(){throw new Error("no PRNG")},o=new Uint8Array(16),e=new Uint8Array(32);e[0]=9;var c=v(),w=v([1]),g=v([56129,1]),y=v([30883,4953,19914,30187,55467,16705,2637,112,59544,30585,16505,36039,65139,11119,27886,20995]),l=v([61785,9906,39828,60374,45398,33411,5274,224,53552,61171,33010,6542,64743,22239,55772,9222]),t=v([54554,36645,11616,51542,42930,38181,51040,26924,56412,64982,57905,49316,21502,52590,14035,8553]),f=v([26200,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214,26214]),s=v([41136,18958,6951,50414,58488,44335,6150,12099,55207,15867,153,11085,57099,20417,9344,11139]);function h(r,n){return r<<n|r>>>32-n}function b(r,n){var e=255&r[n+3];return(e=(e=e<<8|255&r[n+2])<<8|255&r[n+1])<<8|255&r[n+0]}function B(r,n){var e=r[n]<<24|r[n+1]<<16|r[n+2]<<8|r[n+3],t=r[n+4]<<24|r[n+5]<<16|r[n+6]<<8|r[n+7];return new m(e,t)}function p(r,n,e){var t;for(t=0;t<4;t++)r[n+t]=255&e,e>>>=8}function S(r,n,e){r[n]=e.hi>>24&255,r[n+1]=e.hi>>16&255,r[n+2]=e.hi>>8&255,r[n+3]=255&e.hi,r[n+4]=e.lo>>24&255,r[n+5]=e.lo>>16&255,r[n+6]=e.lo>>8&255,r[n+7]=255&e.lo}function u(r,n,e,t,o){var i,a=0;for(i=0;i<o;i++)a|=r[n+i]^e[t+i];return(1&a-1>>>8)-1}function A(r,n,e,t){return u(r,n,e,t,16)}function _(r,n,e,t){return u(r,n,e,t,32)}function U(r,n,e,t,o){var i,a,f,u=new Uint32Array(16),c=new Uint32Array(16),w=new Uint32Array(16),y=new Uint32Array(4);for(i=0;i<4;i++)c[5*i]=b(t,4*i),c[1+i]=b(e,4*i),c[6+i]=b(n,4*i),c[11+i]=b(e,16+4*i);for(i=0;i<16;i++)w[i]=c[i];for(i=0;i<20;i++){for(a=0;a<4;a++){for(f=0;f<4;f++)y[f]=c[(5*a+4*f)%16];for(y[1]^=h(y[0]+y[3]|0,7),y[2]^=h(y[1]+y[0]|0,9),y[3]^=h(y[2]+y[1]|0,13),y[0]^=h(y[3]+y[2]|0,18),f=0;f<4;f++)u[4*a+(a+f)%4]=y[f]}for(f=0;f<16;f++)c[f]=u[f]}if(o){for(i=0;i<16;i++)c[i]=c[i]+w[i]|0;for(i=0;i<4;i++)c[5*i]=c[5*i]-b(t,4*i)|0,c[6+i]=c[6+i]-b(n,4*i)|0;for(i=0;i<4;i++)p(r,4*i,c[5*i]),p(r,16+4*i,c[6+i])}else for(i=0;i<16;i++)p(r,4*i,c[i]+w[i]|0)}function E(r,n,e,t){U(r,n,e,t,!1)}function x(r,n,e,t){return U(r,n,e,t,!0),0}var d=new Uint8Array([101,120,112,97,110,100,32,51,50,45,98,121,116,101,32,107]);function K(r,n,e,t,o,i,a){var f,u,c=new Uint8Array(16),w=new Uint8Array(64);if(!o)return 0;for(u=0;u<16;u++)c[u]=0;for(u=0;u<8;u++)c[u]=i[u];for(;64<=o;){for(E(w,c,a,d),u=0;u<64;u++)r[n+u]=(e?e[t+u]:0)^w[u];for(f=1,u=8;u<16;u++)f=f+(255&c[u])|0,c[u]=255&f,f>>>=8;o-=64,n+=64,e&&(t+=64)}if(0<o)for(E(w,c,a,d),u=0;u<o;u++)r[n+u]=(e?e[t+u]:0)^w[u];return 0}function Y(r,n,e,t,o){return K(r,n,null,0,e,t,o)}function L(r,n,e,t,o){var i=new Uint8Array(32);return x(i,t,o,d),Y(r,n,e,t.subarray(16),i)}function T(r,n,e,t,o,i,a){var f=new Uint8Array(32);return x(f,i,a,d),K(r,n,e,t,o,i.subarray(16),f)}function k(r,n){var e,t=0;for(e=0;e<17;e++)t=t+(r[e]+n[e]|0)|0,r[e]=255&t,t>>>=8}var z=new Uint32Array([5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,252]);function R(r,n,e,t,o,i){var a,f,u,c,w=new Uint32Array(17),y=new Uint32Array(17),l=new Uint32Array(17),s=new Uint32Array(17),h=new Uint32Array(17);for(u=0;u<17;u++)y[u]=l[u]=0;for(u=0;u<16;u++)y[u]=i[u];for(y[3]&=15,y[4]&=252,y[7]&=15,y[8]&=252,y[11]&=15,y[12]&=252,y[15]&=15;0<o;){for(u=0;u<17;u++)s[u]=0;for(u=0;u<16&&u<o;++u)s[u]=e[t+u];for(s[u]=1,t+=u,o-=u,k(l,s),f=0;f<17;f++)for(u=w[f]=0;u<17;u++)w[f]=w[f]+l[u]*(u<=f?y[f-u]:320*y[f+17-u]|0)|0;for(f=0;f<17;f++)l[f]=w[f];for(u=c=0;u<16;u++)c=c+l[u]|0,l[u]=255&c,c>>>=8;for(c=c+l[16]|0,l[16]=3&c,c=5*(c>>>2)|0,u=0;u<16;u++)c=c+l[u]|0,l[u]=255&c,c>>>=8;c=c+l[16]|0,l[16]=c}for(u=0;u<17;u++)h[u]=l[u];for(k(l,z),a=0|-(l[16]>>>7),u=0;u<17;u++)l[u]^=a&(h[u]^l[u]);for(u=0;u<16;u++)s[u]=i[u+16];for(s[16]=0,k(l,s),u=0;u<16;u++)r[n+u]=l[u];return 0}function P(r,n,e,t,o,i){var a=new Uint8Array(16);return R(a,0,e,t,o,i),A(r,n,a,0)}function M(r,n,e,t,o){var i;if(e<32)return-1;for(T(r,0,n,0,e,t,o),R(r,16,r,32,e-32,r),i=0;i<16;i++)r[i]=0;return 0}function N(r,n,e,t,o){var i,a=new Uint8Array(32);if(e<32)return-1;if(L(a,0,32,t,o),0!==P(n,16,n,32,e-32,a))return-1;for(T(r,0,n,0,e,t,o),i=0;i<32;i++)r[i]=0;return 0}function O(r,n){var e;for(e=0;e<16;e++)r[e]=0|n[e]}function C(r){var n,e;for(e=0;e<16;e++)r[e]+=65536,n=Math.floor(r[e]/65536),r[(e+1)*(e<15?1:0)]+=n-1+37*(n-1)*(15===e?1:0),r[e]-=65536*n}function F(r,n,e){for(var t,o=~(e-1),i=0;i<16;i++)t=o&(r[i]^n[i]),r[i]^=t,n[i]^=t}function Z(r,n){var e,t,o,i=v(),a=v();for(e=0;e<16;e++)a[e]=n[e];for(C(a),C(a),C(a),t=0;t<2;t++){for(i[0]=a[0]-65517,e=1;e<15;e++)i[e]=a[e]-65535-(i[e-1]>>16&1),i[e-1]&=65535;i[15]=a[15]-32767-(i[14]>>16&1),o=i[15]>>16&1,i[14]&=65535,F(a,i,1-o)}for(e=0;e<16;e++)r[2*e]=255&a[e],r[2*e+1]=a[e]>>8}function G(r,n){var e=new Uint8Array(32),t=new Uint8Array(32);return Z(e,r),Z(t,n),_(e,0,t,0)}function q(r){var n=new Uint8Array(32);return Z(n,r),1&n[0]}function D(r,n){var e;for(e=0;e<16;e++)r[e]=n[2*e]+(n[2*e+1]<<8);r[15]&=32767}function I(r,n,e){var t;for(t=0;t<16;t++)r[t]=n[t]+e[t]|0}function V(r,n,e){var t;for(t=0;t<16;t++)r[t]=n[t]-e[t]|0}function X(r,n,e){var t,o,i=new Float64Array(31);for(t=0;t<31;t++)i[t]=0;for(t=0;t<16;t++)for(o=0;o<16;o++)i[t+o]+=n[t]*e[o];for(t=0;t<15;t++)i[t]+=38*i[t+16];for(t=0;t<16;t++)r[t]=i[t];C(r),C(r)}function j(r,n){X(r,n,n)}function H(r,n){var e,t=v();for(e=0;e<16;e++)t[e]=n[e];for(e=253;0<=e;e--)j(t,t),2!==e&&4!==e&&X(t,t,n);for(e=0;e<16;e++)r[e]=t[e]}function J(r,n){var e,t=v();for(e=0;e<16;e++)t[e]=n[e];for(e=250;0<=e;e--)j(t,t),1!==e&&X(t,t,n);for(e=0;e<16;e++)r[e]=t[e]}function Q(r,n,e){var t,o,i=new Uint8Array(32),a=new Float64Array(80),f=v(),u=v(),c=v(),w=v(),y=v(),l=v();for(o=0;o<31;o++)i[o]=n[o];for(i[31]=127&n[31]|64,i[0]&=248,D(a,e),o=0;o<16;o++)u[o]=a[o],w[o]=f[o]=c[o]=0;for(f[0]=w[0]=1,o=254;0<=o;--o)F(f,u,t=i[o>>>3]>>>(7&o)&1),F(c,w,t),I(y,f,c),V(f,f,c),I(c,u,w),V(u,u,w),j(w,y),j(l,f),X(f,c,f),X(c,u,y),I(y,f,c),V(f,f,c),j(u,f),V(c,w,l),X(f,c,g),I(f,f,w),X(c,c,f),X(f,w,l),X(w,u,a),j(u,y),F(f,u,t),F(c,w,t);for(o=0;o<16;o++)a[o+16]=f[o],a[o+32]=c[o],a[o+48]=u[o],a[o+64]=w[o];var s=a.subarray(32),h=a.subarray(16);return H(s,s),X(h,h,s),Z(r,h),0}function W(r,n){return Q(r,n,e)}function $(r,n){return a(n,32),W(r,n)}function rr(r,n,e){var t=new Uint8Array(32);return Q(t,e,n),x(r,o,t,d)}var nr=M,er=N;function tr(){var r,n,e,t=0,o=0,i=0,a=0,f=65535;for(e=0;e<arguments.length;e++)t+=(r=arguments[e].lo)&f,o+=r>>>16,i+=(n=arguments[e].hi)&f,a+=n>>>16;return new m((i+=(o+=t>>>16)>>>16)&f|(a+=i>>>16)<<16,t&f|o<<16)}function or(r,n){return new m(r.hi>>>n,r.lo>>>n|r.hi<<32-n)}function ir(){var r,n=0,e=0;for(r=0;r<arguments.length;r++)n^=arguments[r].lo,e^=arguments[r].hi;return new m(e,n)}function ar(r,n){var e,t,o=32-n;return n<32?(e=r.hi>>>n|r.lo<<o,t=r.lo>>>n|r.hi<<o):n<64&&(e=r.lo>>>n|r.hi<<o,t=r.hi>>>n|r.lo<<o),new m(e,t)}var fr=[new m(1116352408,3609767458),new m(1899447441,602891725),new m(3049323471,3964484399),new m(3921009573,2173295548),new m(961987163,4081628472),new m(1508970993,3053834265),new m(2453635748,2937671579),new m(2870763221,3664609560),new m(3624381080,2734883394),new m(310598401,1164996542),new m(607225278,1323610764),new m(1426881987,3590304994),new m(1925078388,4068182383),new m(2162078206,991336113),new m(2614888103,633803317),new m(3248222580,3479774868),new m(3835390401,2666613458),new m(4022224774,944711139),new m(264347078,2341262773),new m(604807628,2007800933),new m(770255983,1495990901),new m(1249150122,1856431235),new m(1555081692,3175218132),new m(1996064986,2198950837),new m(2554220882,3999719339),new m(2821834349,766784016),new m(2952996808,2566594879),new m(3210313671,3203337956),new m(3336571891,1034457026),new m(3584528711,2466948901),new m(113926993,3758326383),new m(338241895,168717936),new m(666307205,1188179964),new m(773529912,1546045734),new m(1294757372,1522805485),new m(1396182291,2643833823),new m(1695183700,2343527390),new m(1986661051,1014477480),new m(2177026350,1206759142),new m(2456956037,344077627),new m(2730485921,1290863460),new m(2820302411,3158454273),new m(3259730800,3505952657),new m(3345764771,106217008),new m(3516065817,3606008344),new m(3600352804,1432725776),new m(4094571909,1467031594),new m(275423344,851169720),new m(430227734,3100823752),new m(506948616,1363258195),new m(659060556,3750685593),new m(883997877,3785050280),new m(958139571,3318307427),new m(1322822218,3812723403),new m(1537002063,2003034995),new m(1747873779,3602036899),new m(1955562222,1575990012),new m(2024104815,1125592928),new m(2227730452,2716904306),new m(2361852424,442776044),new m(2428436474,593698344),new m(2756734187,3733110249),new m(3204031479,2999351573),new m(3329325298,3815920427),new m(3391569614,3928383900),new m(3515267271,566280711),new m(3940187606,3454069534),new m(4118630271,4000239992),new m(116418474,1914138554),new m(174292421,2731055270),new m(289380356,3203993006),new m(460393269,320620315),new m(685471733,587496836),new m(852142971,1086792851),new m(1017036298,365543100),new m(1126000580,2618297676),new m(1288033470,3409855158),new m(1501505948,4234509866),new m(1607167915,987167468),new m(1816402316,1246189591)];function ur(r,n,e){var t,o,i,a=[],f=[],u=[],c=[];for(o=0;o<8;o++)a[o]=u[o]=B(r,8*o);for(var w,y,l,s,h,v,g,b,p,A,_,U,E,x,d=0;128<=e;){for(o=0;o<16;o++)c[o]=B(n,8*o+d);for(o=0;o<80;o++){for(i=0;i<8;i++)f[i]=u[i];for(t=tr(u[7],ir(ar(x=u[4],14),ar(x,18),ar(x,41)),(p=u[4],A=u[5],_=u[6],0,U=p.hi&A.hi^~p.hi&_.hi,E=p.lo&A.lo^~p.lo&_.lo,new m(U,E)),fr[o],c[o%16]),f[7]=tr(t,ir(ar(b=u[0],28),ar(b,34),ar(b,39)),(l=u[0],s=u[1],h=u[2],0,v=l.hi&s.hi^l.hi&h.hi^s.hi&h.hi,g=l.lo&s.lo^l.lo&h.lo^s.lo&h.lo,new m(v,g))),f[3]=tr(f[3],t),i=0;i<8;i++)u[(i+1)%8]=f[i];if(o%16==15)for(i=0;i<16;i++)c[i]=tr(c[i],c[(i+9)%16],ir(ar(y=c[(i+1)%16],1),ar(y,8),or(y,7)),ir(ar(w=c[(i+14)%16],19),ar(w,61),or(w,6)))}for(o=0;o<8;o++)u[o]=tr(u[o],a[o]),a[o]=u[o];d+=128,e-=128}for(o=0;o<8;o++)S(r,8*o,a[o]);return e}var cr=new Uint8Array([106,9,230,103,243,188,201,8,187,103,174,133,132,202,167,59,60,110,243,114,254,148,248,43,165,79,245,58,95,29,54,241,81,14,82,127,173,230,130,209,155,5,104,140,43,62,108,31,31,131,217,171,251,65,189,107,91,224,205,25,19,126,33,121]);function wr(r,n,e){var t,o=new Uint8Array(64),i=new Uint8Array(256),a=e;for(t=0;t<64;t++)o[t]=cr[t];for(ur(o,n,e),e%=128,t=0;t<256;t++)i[t]=0;for(t=0;t<e;t++)i[t]=n[a-e+t];for(i[e]=128,i[(e=256-128*(e<112?1:0))-9]=0,S(i,e-8,new m(a/536870912|0,a<<3)),ur(o,i,e),t=0;t<64;t++)r[t]=o[t];return 0}function yr(r,n){var e=v(),t=v(),o=v(),i=v(),a=v(),f=v(),u=v(),c=v(),w=v();V(e,r[1],r[0]),V(w,n[1],n[0]),X(e,e,w),I(t,r[0],r[1]),I(w,n[0],n[1]),X(t,t,w),X(o,r[3],n[3]),X(o,o,l),X(i,r[2],n[2]),I(i,i,i),V(a,t,e),V(f,i,o),I(u,i,o),I(c,t,e),X(r[0],a,f),X(r[1],c,u),X(r[2],u,f),X(r[3],a,c)}function lr(r,n,e){var t;for(t=0;t<4;t++)F(r[t],n[t],e)}function sr(r,n){var e=v(),t=v(),o=v();H(o,n[2]),X(e,n[0],o),X(t,n[1],o),Z(r,t),r[31]^=q(e)<<7}function hr(r,n,e){var t,o;for(O(r[0],c),O(r[1],w),O(r[2],w),O(r[3],c),o=255;0<=o;--o)lr(r,n,t=e[o/8|0]>>(7&o)&1),yr(n,r),yr(r,r),lr(r,n,t)}function vr(r,n){var e=[v(),v(),v(),v()];O(e[0],t),O(e[1],f),O(e[2],w),X(e[3],t,f),hr(r,e,n)}function gr(r,n,e){var t,o=new Uint8Array(64),i=[v(),v(),v(),v()];for(e||a(n,32),wr(o,n,32),o[0]&=248,o[31]&=127,o[31]|=64,vr(i,o),sr(r,i),t=0;t<32;t++)n[t+32]=r[t];return 0}var br=new Float64Array([237,211,245,92,26,99,18,88,214,156,247,162,222,249,222,20,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,16]);function pr(r,n){var e,t,o,i;for(t=63;32<=t;--t){for(e=0,o=t-32,i=t-12;o<i;++o)n[o]+=e-16*n[t]*br[o-(t-32)],e=Math.floor((n[o]+128)/256),n[o]-=256*e;n[o]+=e,n[t]=0}for(o=e=0;o<32;o++)n[o]+=e-(n[31]>>4)*br[o],e=n[o]>>8,n[o]&=255;for(o=0;o<32;o++)n[o]-=e*br[o];for(t=0;t<32;t++)n[t+1]+=n[t]>>8,r[t]=255&n[t]}function Ar(r){var n,e=new Float64Array(64);for(n=0;n<64;n++)e[n]=r[n];for(n=0;n<64;n++)r[n]=0;pr(r,e)}function _r(r,n,e,t){var o,i,a=new Uint8Array(64),f=new Uint8Array(64),u=new Uint8Array(64),c=new Float64Array(64),w=[v(),v(),v(),v()];wr(a,t,32),a[0]&=248,a[31]&=127,a[31]|=64;var y=e+64;for(o=0;o<e;o++)r[64+o]=n[o];for(o=0;o<32;o++)r[32+o]=a[32+o];for(wr(u,r.subarray(32),e+32),Ar(u),vr(w,u),sr(r,w),o=32;o<64;o++)r[o]=t[o];for(wr(f,r,e+64),Ar(f),o=0;o<64;o++)c[o]=0;for(o=0;o<32;o++)c[o]=u[o];for(o=0;o<32;o++)for(i=0;i<32;i++)c[o+i]+=f[o]*a[i];return pr(r.subarray(32),c),y}function Ur(r,n,e,t){var o,i=new Uint8Array(32),a=new Uint8Array(64),f=[v(),v(),v(),v()],u=[v(),v(),v(),v()];if(e<64)return-1;if(function(r,n){var e=v(),t=v(),o=v(),i=v(),a=v(),f=v(),u=v();if(O(r[2],w),D(r[1],n),j(o,r[1]),X(i,o,y),V(o,o,r[2]),I(i,r[2],i),j(a,i),j(f,a),X(u,f,a),X(e,u,o),X(e,e,i),J(e,e),X(e,e,o),X(e,e,i),X(e,e,i),X(r[0],e,i),j(t,r[0]),X(t,t,i),G(t,o)&&X(r[0],r[0],s),j(t,r[0]),X(t,t,i),G(t,o))return 1;q(r[0])===n[31]>>7&&V(r[0],c,r[0]),X(r[3],r[0],r[1])}(u,t))return-1;for(o=0;o<e;o++)r[o]=n[o];for(o=0;o<32;o++)r[o+32]=t[o];if(wr(a,r,e),Ar(a),hr(f,u,a),vr(u,n.subarray(32)),yr(f,u),sr(i,f),e-=64,_(n,0,i,0)){for(o=0;o<e;o++)r[o]=0;return-1}for(o=0;o<e;o++)r[o]=n[o+64];return e}function Er(r,n){if(32!==r.length)throw new Error("bad key size");if(24!==n.length)throw new Error("bad nonce size")}function xr(){for(var r=0;r<arguments.length;r++)if(!(arguments[r]instanceof Uint8Array))throw new TypeError("unexpected type, use Uint8Array")}function dr(r){for(var n=0;n<r.length;n++)r[n]=0}i.lowlevel={crypto_core_hsalsa20:x,crypto_stream_xor:T,crypto_stream:L,crypto_stream_salsa20_xor:K,crypto_stream_salsa20:Y,crypto_onetimeauth:R,crypto_onetimeauth_verify:P,crypto_verify_16:A,crypto_verify_32:_,crypto_secretbox:M,crypto_secretbox_open:N,crypto_scalarmult:Q,crypto_scalarmult_base:W,crypto_box_beforenm:rr,crypto_box_afternm:nr,crypto_box:function(r,n,e,t,o,i){var a=new Uint8Array(32);return rr(a,o,i),nr(r,n,e,t,a)},crypto_box_open:function(r,n,e,t,o,i){var a=new Uint8Array(32);return rr(a,o,i),er(r,n,e,t,a)},crypto_box_keypair:$,crypto_hash:wr,crypto_sign:_r,crypto_sign_keypair:gr,crypto_sign_open:Ur,crypto_secretbox_KEYBYTES:32,crypto_secretbox_NONCEBYTES:24,crypto_secretbox_ZEROBYTES:32,crypto_secretbox_BOXZEROBYTES:16,crypto_scalarmult_BYTES:32,crypto_scalarmult_SCALARBYTES:32,crypto_box_PUBLICKEYBYTES:32,crypto_box_SECRETKEYBYTES:32,crypto_box_BEFORENMBYTES:32,crypto_box_NONCEBYTES:24,crypto_box_ZEROBYTES:32,crypto_box_BOXZEROBYTES:16,crypto_sign_BYTES:64,crypto_sign_PUBLICKEYBYTES:32,crypto_sign_SECRETKEYBYTES:64,crypto_sign_SEEDBYTES:32,crypto_hash_BYTES:64,gf:v,D:y,L:br,pack25519:Z,unpack25519:D,M:X,A:I,S:j,Z:V,pow2523:J,add:yr,set25519:O,modL:pr,scalarmult:hr,scalarbase:vr},i.randomBytes=function(r){var n=new Uint8Array(r);return a(n,r),n},i.secretbox=function(r,n,e){xr(r,n,e),Er(e,n);for(var t=new Uint8Array(32+r.length),o=new Uint8Array(t.length),i=0;i<r.length;i++)t[i+32]=r[i];return M(o,t,t.length,n,e),o.subarray(16)},i.secretbox.open=function(r,n,e){xr(r,n,e),Er(e,n);for(var t=new Uint8Array(16+r.length),o=new Uint8Array(t.length),i=0;i<r.length;i++)t[i+16]=r[i];return t.length<32||0!==N(o,t,t.length,n,e)?null:o.subarray(32)},i.secretbox.keyLength=32,i.secretbox.nonceLength=24,i.secretbox.overheadLength=16,i.scalarMult=function(r,n){if(xr(r,n),32!==r.length)throw new Error("bad n size");if(32!==n.length)throw new Error("bad p size");var e=new Uint8Array(32);return Q(e,r,n),e},i.scalarMult.base=function(r){if(xr(r),32!==r.length)throw new Error("bad n size");var n=new Uint8Array(32);return W(n,r),n},i.scalarMult.scalarLength=32,i.scalarMult.groupElementLength=32,i.box=function(r,n,e,t){var o=i.box.before(e,t);return i.secretbox(r,n,o)},i.box.before=function(r,n){xr(r,n),function(r,n){if(32!==r.length)throw new Error("bad public key size");if(32!==n.length)throw new Error("bad secret key size")}(r,n);var e=new Uint8Array(32);return rr(e,r,n),e},i.box.after=i.secretbox,i.box.open=function(r,n,e,t){var o=i.box.before(e,t);return i.secretbox.open(r,n,o)},i.box.open.after=i.secretbox.open,i.box.keyPair=function(){var r=new Uint8Array(32),n=new Uint8Array(32);return $(r,n),{publicKey:r,secretKey:n}},i.box.keyPair.fromSecretKey=function(r){if(xr(r),32!==r.length)throw new Error("bad secret key size");var n=new Uint8Array(32);return W(n,r),{publicKey:n,secretKey:new Uint8Array(r)}},i.box.publicKeyLength=32,i.box.secretKeyLength=32,i.box.sharedKeyLength=32,i.box.nonceLength=24,i.box.overheadLength=i.secretbox.overheadLength,i.sign=function(r,n){if(xr(r,n),64!==n.length)throw new Error("bad secret key size");var e=new Uint8Array(64+r.length);return _r(e,r,r.length,n),e},i.sign.open=function(r,n){if(xr(r,n),32!==n.length)throw new Error("bad public key size");var e=new Uint8Array(r.length),t=Ur(e,r,r.length,n);if(t<0)return null;for(var o=new Uint8Array(t),i=0;i<o.length;i++)o[i]=e[i];return o},i.sign.detached=function(r,n){for(var e=i.sign(r,n),t=new Uint8Array(64),o=0;o<t.length;o++)t[o]=e[o];return t},i.sign.detached.verify=function(r,n,e){if(xr(r,n,e),64!==n.length)throw new Error("bad signature size");if(32!==e.length)throw new Error("bad public key size");var t,o=new Uint8Array(64+r.length),i=new Uint8Array(64+r.length);for(t=0;t<64;t++)o[t]=n[t];for(t=0;t<r.length;t++)o[t+64]=r[t];return 0<=Ur(i,o,o.length,e)},i.sign.keyPair=function(){var r=new Uint8Array(32),n=new Uint8Array(64);return gr(r,n),{publicKey:r,secretKey:n}},i.sign.keyPair.fromSecretKey=function(r){if(xr(r),64!==r.length)throw new Error("bad secret key size");for(var n=new Uint8Array(32),e=0;e<n.length;e++)n[e]=r[32+e];return{publicKey:n,secretKey:new Uint8Array(r)}},i.sign.keyPair.fromSeed=function(r){if(xr(r),32!==r.length)throw new Error("bad seed size");for(var n=new Uint8Array(32),e=new Uint8Array(64),t=0;t<32;t++)e[t]=r[t];return gr(n,e,!0),{publicKey:n,secretKey:e}},i.sign.publicKeyLength=32,i.sign.secretKeyLength=64,i.sign.seedLength=32,i.sign.signatureLength=64,i.hash=function(r){xr(r);var n=new Uint8Array(64);return wr(n,r,r.length),n},i.hash.hashLength=64,i.verify=function(r,n){return xr(r,n),0!==r.length&&0!==n.length&&(r.length===n.length&&0===u(r,0,n,0,r.length))},i.setPRNG=function(r){a=r},function(){var o="undefined"!=typeof self?self.crypto||self.msCrypto:null;if(o&&o.getRandomValues){i.setPRNG(function(r,n){var e,t=new Uint8Array(n);for(e=0;e<n;e+=65536)o.getRandomValues(t.subarray(e,e+Math.min(n-e,65536)));for(e=0;e<n;e++)r[e]=t[e];dr(t)})}else"undefined"!=typeof require&&(o=require("crypto"))&&o.randomBytes&&i.setPRNG(function(r,n){var e,t=o.randomBytes(n);for(e=0;e<n;e++)r[e]=t[e];dr(t)})}()}("undefined"!=typeof module&&module.exports?module.exports:self.nacl=self.nacl||{});</script>
 <script>
   var K = new URLSearchParams(location.search).get("k") || "";
   var PH = {
@@ -868,10 +947,12 @@ HTML = r"""<!doctype html>
   $("begin").addEventListener("click", function(){
     var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg");
     if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
-    var pw=$("i-pw").value, pw2=$("i-pw2").value, ssh=$("i-ssh").value.trim();
+    var pw=$("i-pw").value, pw2=$("i-pw2").value;
     if(pw && pw!==pw2){ m.style.color="#e88"; m.textContent="the passwords do not match, my Lord"; return; }
+    if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="choose your public-key (.pub) file first, my Lord"; return; }
+    if(sshMode==="generate" && !sshPubKey){ m.style.color="#e88"; m.textContent="generate a key first — and save both downloads"; return; }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
-    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_key="+encodeURIComponent(ssh);
+    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
     fetch("/identity?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
       .then(function(r){ if(r.ok){ submitted=true; m.textContent=""; tick(); } else { m.style.color="#e88"; m.textContent="the forge refused that name"; } })
       .catch(function(){ m.style.color="#e88"; m.textContent="the forge could not be reached"; });
@@ -924,6 +1005,122 @@ HTML = r"""<!doctype html>
     fetch("/restart?k="+encodeURIComponent(K),{method:"POST"})
       .then(function(){ submitted=false; nameTouched=false; choiceArmed=false; var inp=$("i-name"); if(inp) inp.value=""; setTimeout(tick,700); })
       .catch(function(){ tick(); });
+  });
+  // ===== SSH access: existing-key picker + browser-side ed25519 generation =====
+  // Pure JS so it works over plain HTTP (crypto.subtle needs a secure context;
+  // getRandomValues + TweetNaCl do not). Private key NEVER leaves the browser —
+  // only the public key is POSTed. Formats validated against ssh-keygen+puttygen.
+  var sshMode="none", sshPubKey="", genPriv="", genPpk="";
+  var SSHKEY_RE=/^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-\S+|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-\S+)\s+\S+/;
+  function _u32(n){return new Uint8Array([(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255]);}
+  function _cat(a){var L=0,i;for(i=0;i<a.length;i++)L+=a[i].length;var o=new Uint8Array(L),p=0;for(i=0;i<a.length;i++){o.set(a[i],p);p+=a[i].length;}return o;}
+  function _sb(s){return new TextEncoder().encode(s);}
+  function _sshStr(b){if(typeof b==="string")b=_sb(b);return _cat([_u32(b.length),b]);}
+  function _b64(b){var s="";for(var i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return btoa(s);}
+  function _b64w(b,w){var s=_b64(b),o=[];for(var i=0;i<s.length;i+=w)o.push(s.slice(i,i+w));return o.join("\n");}
+  function _hex(b){return Array.prototype.map.call(b,function(x){return x.toString(16).padStart(2,"0");}).join("");}
+  function _rotl(n,s){return (n<<s)|(n>>>(32-s));}
+  function _sha1(bytes){
+    var ml=bytes.length*8, total=(((bytes.length+1)+8+63)>>6)<<6;
+    var msg=new Uint8Array(total); msg.set(bytes); msg[bytes.length]=0x80;
+    var dv=new DataView(msg.buffer);
+    dv.setUint32(total-4, ml>>>0, false); dv.setUint32(total-8, Math.floor(ml/4294967296)>>>0, false);
+    var h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0,w=new Int32Array(80),i,t;
+    for(i=0;i<total;i+=64){
+      for(t=0;t<16;t++)w[t]=dv.getInt32(i+t*4,false);
+      for(t=16;t<80;t++)w[t]=_rotl(w[t-3]^w[t-8]^w[t-14]^w[t-16],1);
+      var a=h0,b=h1,c=h2,d=h3,e=h4,f,k,tmp;
+      for(t=0;t<80;t++){
+        if(t<20){f=(b&c)|((~b)&d);k=0x5A827999;}else if(t<40){f=b^c^d;k=0x6ED9EBA1;}
+        else if(t<60){f=(b&c)|(b&d)|(c&d);k=0x8F1BBCDC;}else{f=b^c^d;k=0xCA62C1D6;}
+        tmp=(_rotl(a,5)+f+e+k+w[t])|0; e=d;d=c;c=_rotl(b,30);b=a;a=tmp;
+      }
+      h0=(h0+a)|0;h1=(h1+b)|0;h2=(h2+c)|0;h3=(h3+d)|0;h4=(h4+e)|0;
+    }
+    var out=new Uint8Array(20),ov=new DataView(out.buffer);
+    ov.setInt32(0,h0,false);ov.setInt32(4,h1,false);ov.setInt32(8,h2,false);ov.setInt32(12,h3,false);ov.setInt32(16,h4,false);
+    return out;
+  }
+  function _hmac1(key,msg){var B=64;if(key.length>B)key=_sha1(key);var k=new Uint8Array(B);k.set(key);var ip=new Uint8Array(B),op=new Uint8Array(B);for(var i=0;i<B;i++){ip[i]=k[i]^0x36;op[i]=k[i]^0x5c;}return _sha1(_cat([op,_sha1(_cat([ip,msg]))]));}
+  function _sshPubLine(pub,c){return "ssh-ed25519 "+_b64(_cat([_sshStr("ssh-ed25519"),_sshStr(pub)]))+" "+c;}
+  function _opensshPriv(seed,pub,c){
+    var pb=_cat([_sshStr("ssh-ed25519"),_sshStr(pub)]);
+    var ci=crypto.getRandomValues(new Uint8Array(4));
+    var pv=_cat([ci,ci,_sshStr("ssh-ed25519"),_sshStr(pub),_sshStr(_cat([seed,pub])),_sshStr(c)]);
+    var ex=[],pad=1; while((pv.length+ex.length)%8!==0)ex.push(pad++); pv=_cat([pv,new Uint8Array(ex)]);
+    var body=_cat([_cat([_sb("openssh-key-v1"),new Uint8Array([0])]),_sshStr("none"),_sshStr("none"),_sshStr(""),_u32(1),_sshStr(pb),_sshStr(pv)]);
+    return "-----BEGIN OPENSSH PRIVATE KEY-----\n"+_b64w(body,70)+"\n-----END OPENSSH PRIVATE KEY-----\n";
+  }
+  function _ppkV2(seed,pub,c){
+    var pb=_cat([_sshStr("ssh-ed25519"),_sshStr(pub)]);
+    var be=new Uint8Array(seed).reverse(),i=0; while(i<be.length-1&&be[i]===0)i++; var mag=be.slice(i);
+    if(mag[0]&0x80)mag=_cat([new Uint8Array([0]),mag]);
+    var vb=_sshStr(mag);
+    var md=_cat([_sshStr("ssh-ed25519"),_sshStr("none"),_sshStr(c),_sshStr(pb),_sshStr(vb)]);
+    var mac=_hex(_hmac1(_sha1(_sb("putty-private-key-file-mac-key")),md));
+    var pl=_b64w(pb,64),vl=_b64w(vb,64);
+    return "PuTTY-User-Key-File-2: ssh-ed25519\nEncryption: none\nComment: "+c+"\nPublic-Lines: "+pl.split("\n").length+"\n"+pl+"\nPrivate-Lines: "+vl.split("\n").length+"\n"+vl+"\nPrivate-MAC: "+mac+"\n";
+  }
+  function generateKeypair(comment){
+    var seed=crypto.getRandomValues(new Uint8Array(32));
+    var kp=nacl.sign.keyPair.fromSeed(seed), pub=new Uint8Array(kp.publicKey);
+    return {pubLine:_sshPubLine(pub,comment), privOpenssh:_opensshPriv(seed,pub,comment), ppk:_ppkV2(seed,pub,comment)};
+  }
+  function _dlFallback(name,text){var b=new Blob([text],{type:"application/octet-stream"});var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href);},1500);}
+  function saveFile(name,text){
+    if(window.showSaveFilePicker){
+      window.showSaveFilePicker({suggestedName:name}).then(function(h){return h.createWritable();})
+        .then(function(w){return w.write(text).then(function(){return w.close();});})
+        .catch(function(e){ if(!(e&&e.name==="AbortError")) _dlFallback(name,text); });
+      return;
+    }
+    _dlFallback(name,text);
+  }
+  function setHowtoName(nm){ document.querySelectorAll(".howto-name").forEach(function(e){e.textContent=nm;}); }
+  function setSshMode(mode){
+    sshMode=mode;
+    $("ssh-existing").style.display = mode==="existing"?"":"none";
+    $("ssh-generate").style.display = mode==="generate"?"":"none";
+    if(mode==="none") sshPubKey="";   // existing/generate keep whatever was loaded
+  }
+  document.querySelectorAll('input[name="sshmode"]').forEach(function(r){ r.addEventListener("change", function(){ if(this.checked) setSshMode(this.value); }); });
+  $("ssh-pick").addEventListener("click", function(){ $("ssh-file").click(); });
+  $("ssh-file").addEventListener("change", function(){
+    var f=this.files&&this.files[0], st=$("ssh-existing-status"); if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var line=((rd.result||"")+"").split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean)[0]||"";
+      if(SSHKEY_RE.test(line)){ sshPubKey=line; st.className="ssh-status ok"; st.textContent="✓ public key loaded from "+f.name; }
+      else { sshPubKey=""; st.className="ssh-status err"; st.textContent="that file isn't an SSH public key (look for one ending .pub)"; }
+    };
+    rd.readAsText(f);
+  });
+  $("ssh-gen").addEventListener("click", function(){
+    var st=$("ssh-gen-status"), btn=this;
+    if(typeof nacl==="undefined"||!nacl.sign){ st.className="ssh-status err"; st.textContent="the key generator didn't load — use 'Use existing key' instead"; return; }
+    btn.disabled=true; st.className="ssh-status"; st.textContent="forging a key in your browser…";
+    try{
+      var nm=$("i-name").value.trim().toLowerCase()||"minion";
+      var kp=generateKeypair("weyland@"+nm);
+      sshPubKey=kp.pubLine; genPriv=kp.privOpenssh; genPpk=kp.ppk;
+      setHowtoName(nm); $("ssh-gen-result").style.display="";
+      st.className="ssh-status ok"; st.textContent="key forged — save BOTH files below, then begin the rite";
+      btn.textContent="↻ Regenerate";
+    }catch(e){ st.className="ssh-status err"; st.textContent="couldn't generate a key in this browser — use 'Use existing key'"; }
+    btn.disabled=false;
+  });
+  $("dl-openssh").addEventListener("click", function(){ if(genPriv) saveFile("id_ed25519", genPriv); });
+  $("dl-ppk").addEventListener("click", function(){ if(genPpk) saveFile("id_ed25519.ppk", genPpk); });
+  document.querySelectorAll(".howto .tab").forEach(function(t){ t.addEventListener("click", function(){
+    var tab=this.getAttribute("data-tab");
+    document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
+    document.querySelectorAll(".howto .tabpane").forEach(function(p){ p.style.display = p.getAttribute("data-pane")===tab?"":"none"; });
+  }); });
+  document.addEventListener("click", function(e){
+    var c=e.target.closest(".chip"); if(!c||!c.hasAttribute("data-copy-text")) return;
+    var t=c.getAttribute("data-copy-text"); if(!t){ return; }
+    function done(){ var o=c.textContent; c.classList.add("ok"); c.textContent="copied ✓"; setTimeout(function(){ c.classList.remove("ok"); c.textContent=o; },1200); }
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done,function(){}); else done();
   });
   tick(); setInterval(tick, 1500);
 </script>
