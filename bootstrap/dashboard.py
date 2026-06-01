@@ -565,7 +565,10 @@ HTML = r"""<!doctype html>
   .ssh-status{font-family:var(--mono); font-size:11px; letter-spacing:.04em; margin:9px 0 0; min-height:13px; color:var(--muted)}
   .ssh-status.ok{color:var(--gold)} .ssh-status.err{color:#e88}
   .ssh-warn{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:#ffcf8a; background:#241a08; border:1px solid #5a4a20; border-radius:8px; padding:8px 10px; margin:0 0 11px}
-  .dlrow{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 11px}
+  .dlrow{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 6px}
+  /* post-download "now move it here" instruction, revealed once a download fires */
+  .dl-after{margin:0 0 12px; padding-left:2px}
+  .dl-after .ssh-hint{margin:0 0 6px}
   .howto{margin-top:6px; border-top:1px solid var(--line2); padding-top:11px}
   .tabs{display:flex; gap:6px; margin-bottom:9px}
   .tab{-webkit-appearance:none; appearance:none; cursor:pointer; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:#11161c; border:1px solid var(--line2); border-radius:7px; padding:6px 11px}
@@ -746,14 +749,19 @@ HTML = r"""<!doctype html>
               <p class="ssh-warn">&#9888; Save these keys now &mdash; you will not see them again.</p>
               <div class="dlrow">
                 <button class="btn-ghost dl" type="button" id="dl-openssh">&#8595; id_ed25519 <span class="dlsub">Mac / PowerShell</span></button>
+              </div>
+              <div class="dl-after" id="after-openssh" style="display:none">
+                <p class="ssh-hint">saved to your Downloads &mdash; now move it to your SSH folder (click a path to copy):</p>
                 <div class="chips">
-                  <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\">save in &mdash; Windows: C:\Users\&lt;name&gt;\.ssh\</button>
-                  <button class="chip" type="button" data-copy-text="~/.ssh/">Mac: ~/.ssh/</button>
+                  <button class="chip" type="button" data-copy-text="~/.ssh/id_ed25519">Mac: ~/.ssh/id_ed25519</button>
+                  <button class="chip" type="button" data-copy-text="C:\Users\&lt;name&gt;\.ssh\id_ed25519">Windows: C:\Users\&lt;name&gt;\.ssh\id_ed25519</button>
                 </div>
               </div>
               <div class="dlrow">
                 <button class="btn-ghost dl" type="button" id="dl-ppk">&#8595; id_ed25519.ppk <span class="dlsub">PuTTY (no PuTTYgen)</span></button>
-                <div class="chips"><button class="chip" type="button" data-copy-text="">save anywhere &mdash; PuTTY lets you browse to it</button></div>
+              </div>
+              <div class="dl-after" id="after-ppk" style="display:none">
+                <p class="ssh-hint">saved to your Downloads &mdash; keep it anywhere, just remember where (PuTTY browses to it when you connect).</p>
               </div>
               <div class="howto">
                 <div class="tabs">
@@ -1151,13 +1159,17 @@ HTML = r"""<!doctype html>
       var kp=generateKeypair("weyland@"+nm);
       sshPubKey=kp.pubLine; genPriv=kp.privOpenssh; genPpk=kp.ppk;
       setHowtoName(nm); $("ssh-gen-result").style.display="";
+      $("after-openssh").style.display="none"; $("after-ppk").style.display="none";   // fresh keys: re-download
       st.className="ssh-status ok"; st.textContent="key forged — save BOTH files below, then begin the rite";
       btn.textContent="↻ Regenerate";
     }catch(e){ st.className="ssh-status err"; st.textContent="couldn't generate a key in this browser — use 'Use existing key'"; }
     btn.disabled=false;
   });
-  $("dl-openssh").addEventListener("click", function(){ if(genPriv) saveFile("id_ed25519", genPriv); });
-  $("dl-ppk").addEventListener("click", function(){ if(genPpk) saveFile("id_ed25519.ppk", genPpk); });
+  // showSaveFilePicker isn't available over plain HTTP (non-secure context), so
+  // the download lands in Downloads. Reveal a "now move it here" instruction with
+  // the destination path as copy chips the moment the download fires.
+  $("dl-openssh").addEventListener("click", function(){ if(genPriv){ saveFile("id_ed25519", genPriv); $("after-openssh").style.display=""; } });
+  $("dl-ppk").addEventListener("click", function(){ if(genPpk){ saveFile("id_ed25519.ppk", genPpk); $("after-ppk").style.display=""; } });
   document.querySelectorAll(".howto .tab").forEach(function(t){ t.addEventListener("click", function(){
     var tab=this.getAttribute("data-tab");
     document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
