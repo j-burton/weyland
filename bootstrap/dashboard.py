@@ -70,11 +70,127 @@ def _valid_name(n: str) -> bool:
     return bool(NAME_RE.match(n)) and n != "raspberrypi"
 
 
-def state_with_flags() -> bytes:
-    """state.json verbatim, plus identity_submitted + this Pi's current hostname.
+# --- Live phase progress (a plain-English DEBUG line for the running phase) ---
+# Computed PER /state REQUEST from the active phase's log tail — never written
+# into state.json, so the bash side stays its single writer (no race). The text
+# is deliberately literal (real tool names / actions), unlike the mythical phase
+# labels. pct is filled only when the tool actually emits one (apt/git progress).
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][0-9AB]|\x1b[=>]")
+_PCT_RES = [
+    re.compile(r"Progress:\s*\[\s*(\d{1,3})%\]"),                       # apt fancy progress
+    re.compile(r"(?:Receiving|Resolving)\s+(?:objects|deltas):\s+(\d{1,3})%"),  # git
+]
 
-    hostname lets the browser pre-fill the name field on a fresh/started-over Pi
-    (the operator keeps or edits it); never written to state.json here.
+
+def _strip_control(text: str) -> str:
+    return _ANSI_RE.sub("", text).replace("\r", "\n")
+
+
+def _read_log_tail(path: str, nbytes: int = 8192) -> str:
+    try:
+        with open(path, "rb") as f:
+            try:
+                f.seek(-nbytes, os.SEEK_END)
+            except OSError:
+                f.seek(0)
+            data = f.read()
+    except OSError:
+        return ""
+    return _strip_control(data.decode("utf-8", "replace"))
+
+
+def _progress_pct(lines):
+    for ln in reversed(lines):
+        for rx in _PCT_RES:
+            m = rx.search(ln)
+            if m:
+                v = int(m.group(1))
+                if 0 <= v <= 100:
+                    return v
+    return None
+
+
+def _progress_text(lines):
+    """Most recent log line matching a known tool signal, as plain English.
+    Rules tried per line; the most recent matching line wins (live updates)."""
+    for ln in reversed(lines):
+        s = ln.strip()
+        if not s:
+            continue
+        low = s.lower()
+        m = re.match(r"Setting up (\S+)", s)
+        if m:
+            return "apt: installing " + m.group(1) + "..."
+        m = re.match(r"Unpacking (\S+)", s)
+        if m:
+            return "apt: unpacking " + m.group(1) + "..."
+        # apt Get line: "Get:N <url> <suite>/<comp> <arch> <pkg> ..." — match the
+        # FIRST arch token (non-greedy) and take the package right after it.
+        m = re.match(r"Get:\d+\s.*?\b(?:all|arm64|armhf|amd64|i386)\s+(\S+)", s)
+        if m and m.group(1) not in (
+                "Packages", "Sources", "InRelease", "Release", "Translation-en"):
+            return "apt: downloading " + m.group(1) + "..."
+        m = re.match(r"Preparing to unpack \S*?/?([A-Za-z0-9][A-Za-z0-9.+-]*?)[_ ]", s)
+        if m:
+            return "apt: installing " + m.group(1) + "..."
+        if low.startswith("cloning into"):
+            return "git: cloning repository..."
+        if "receiving objects" in low:
+            return "git: receiving objects..."
+        if "resolving deltas" in low:
+            return "git: resolving deltas..."
+        if "one-time code" in low:
+            return "gh: authenticating with GitHub..."
+        if "to authenticate, visit" in low or "login.tailscale.com/a/" in low:
+            return "tailscale: waiting for you to authenticate..."
+        if "installing tailscale" in low:
+            return "tailscale: installing..."
+        if "installing cloudflared" in low:
+            return "cloudflared: installing..."
+        if "installing claude code" in low or low.startswith("installing claude"):
+            return "claude: installing..."
+        if low.startswith("% total") or ("curl" in low and "%" in s):
+            return "downloading..."
+    return None
+
+
+def _active_progress(s):
+    """{'text', 'pct'} for the running phase, or None. Reads the per-phase log
+    if present (run_dance writes <phase>.log), else the global bootstrap.log."""
+    running = None
+    for p in (s.get("phases") or []):
+        if p.get("status") == "running":
+            running = p.get("name")
+            break
+    if not running:
+        return None
+    logf = os.path.join(STATE_DIR, running + ".log")
+    if not (os.path.exists(logf) and os.path.getsize(logf) > 0):
+        logf = os.path.join(STATE_DIR, "bootstrap.log")
+    tail = _read_log_tail(logf)
+    if not tail:
+        return None
+    lines = tail.splitlines()
+    text = _progress_text(lines)
+    if text is None:
+        last = ""
+        for ln in reversed(lines):
+            if ln.strip():
+                last = ln.strip()
+                break
+        if not last:
+            return None
+        text = running + ": " + last[:60]
+    return {"text": text, "pct": _progress_pct(lines)}
+
+
+def state_with_flags() -> bytes:
+    """state.json verbatim, plus identity_submitted, this Pi's hostname, and a
+    live `progress` line for the running phase.
+
+    hostname lets the browser pre-fill the name field on a fresh/started-over Pi.
+    progress is a per-request debug line (never written back to state.json, so
+    the bash side stays the single writer). None when no phase is running.
     """
     try:
         with open(STATE_FILE) as f:
@@ -84,6 +200,10 @@ def state_with_flags() -> bytes:
     s["identity_submitted"] = os.path.exists(IDENTITY_FILE)
     host = (socket.gethostname() or "").strip().lower()
     s["hostname"] = host if _valid_name(host) else ""
+    try:
+        s["progress"] = _active_progress(s)
+    except Exception:
+        s["progress"] = None
     return json.dumps(s).encode("utf-8")
 
 
@@ -404,7 +524,7 @@ HTML = r"""<!doctype html>
   .pair{display:grid; grid-template-columns:1fr 1fr; gap:12px} @media (max-width:560px){.pair{grid-template-columns:1fr}}
   .fmsg{font-family:var(--mono); font-size:11px; letter-spacing:.08em; margin:10px 0 0; min-height:14px; color:#e88}
   .roster{list-style:none; margin:0; padding:0}
-  .roster li{display:flex; align-items:center; gap:13px; padding:7px 6px; border-bottom:1px solid #232a33}
+  .roster li{display:flex; flex-wrap:wrap; align-items:center; gap:13px; padding:7px 6px; border-bottom:1px solid #232a33}
   .roster li:last-child{border-bottom:0}
   .badge{flex:0 0 auto; width:22px; height:22px; border-radius:5px; transform:rotate(45deg); display:grid; place-items:center; border:1px solid}
   .badge span{transform:rotate(-45deg); font-size:11px; font-weight:700; line-height:1}
@@ -421,6 +541,29 @@ HTML = r"""<!doctype html>
   /* active phase row: a forge-glow sweep so progress is obvious even with no auth card */
   .roster li.is-run{background:linear-gradient(90deg,#e8750a05,#e8750a22,#e8750a05); background-size:220% 100%; animation:forgesweep 2.6s linear infinite; border-radius:6px}
   @keyframes forgesweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
+  /* live progress sub-line on the RUNNING row — a plain-English DEBUG window
+     (real tool names, not mythology); removed the instant the phase completes */
+  .subline{flex:0 0 100%; margin:3px 0 1px 35px; display:flex; align-items:center; gap:9px;
+    font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:var(--muted); min-height:14px}
+  .sub-text{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto}
+  .sub-bar{flex:0 0 88px; height:5px; background:#1b212a; border:1px solid #333b46; border-radius:3px; overflow:hidden}
+  .sub-bar i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--flame),var(--flame-bright)); transition:width .35s ease}
+  .sub-pct{flex:0 0 auto; color:var(--flame-bright)}
+  .sub-dots::after{content:""; animation:subdots 1.3s steps(1,end) infinite}
+  @keyframes subdots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}100%{content:""}}
+  /* continue/restart choice screen — shown FIRST when a partial run is found */
+  .choice{display:none; flex-direction:column; gap:14px; margin-top:6px}
+  .choice .clead{font-family:var(--serif); font-style:italic; font-size:14.5px; color:var(--leather); margin:0 0 2px}
+  .choice .cbtns{display:flex; gap:13px; flex-wrap:wrap}
+  .cbtn{flex:1 1 220px; text-align:center; cursor:pointer; border-radius:12px; padding:18px 16px;
+    font-family:var(--serif); font-weight:700; font-size:17px; letter-spacing:.01em; border:1px solid}
+  .cbtn .csub{display:block; margin-top:5px; font-family:var(--mono); font-weight:400; font-size:10.5px;
+    letter-spacing:.12em; text-transform:uppercase; opacity:.8}
+  .cbtn-go{color:#ffd9a0; border-color:var(--flame); background:linear-gradient(180deg,#2e1a06,#1c1408);
+    box-shadow:0 0 0 1px #0b0405 inset,0 0 22px #e8750a33}
+  .cbtn-go:hover{box-shadow:0 0 0 1px #0b0405 inset,0 0 32px #e8750a66}
+  .cbtn-again{color:#e8b0a4; border-color:var(--blood-border); background:linear-gradient(180deg,#1a0c0c,#140a0a)}
+  .cbtn-again:hover{color:#ff8c7a; border-color:#a3392c}
   /* top-of-page activity bar — visible whenever a phase runs and no auth card is up */
   #forgebar{position:fixed; top:0; left:0; right:0; height:3px; z-index:70; display:none;
     background:linear-gradient(90deg,transparent,#e8750a,#ff8c1a,#e8750a,transparent); background-size:45% 100%;
@@ -504,6 +647,14 @@ HTML = r"""<!doctype html>
       <ul class="roster" id="roster" style="display:none"></ul>
     </div>
 
+    <section class="choice" id="choice" aria-label="Continue or begin again">
+      <p class="clead">a previous binding was begun &mdash; choose your path, my Lord</p>
+      <div class="cbtns">
+        <div class="cbtn cbtn-go" id="choice-continue" role="button" tabindex="0">CONTINUE THE RITE &rarr;<span class="csub">resume where it left off</span></div>
+        <div class="cbtn cbtn-again" id="choice-again" role="button" tabindex="0">BEGIN AGAIN &#8635;<span class="csub">reset &amp; name the minion anew</span></div>
+      </div>
+    </section>
+
     <section class="authcard" id="authcard" style="display:none" aria-label="The forge demands a blood oath">
       <h3 id="auth-title"></h3>
       <p class="sub" id="auth-sub"></p>
@@ -567,6 +718,12 @@ HTML = r"""<!doctype html>
   };
   var submitted=false;
   var nameTouched=false;   // true once the operator types in the name field
+  // Continue/restart choice screen. choiceArmed is decided ONCE from the FIRST
+  // /state (so it only fires for a run THIS page session didn't start — never
+  // popping up on the operator who just submitted identity). choiceDismissed
+  // flips true once they pick CONTINUE / BEGIN AGAIN.
+  var choiceArmed=null;
+  var choiceDismissed=false;
   function $(id){return document.getElementById(id);}
   function txt(id,v){var e=$(id); if(e) e.textContent=v==null?"":v;}
   function setval(id,v){var e=$(id); if(e) e.value=v==null?"":v;}
@@ -574,7 +731,7 @@ HTML = r"""<!doctype html>
   function liveName(){var v=$("i-name").value.trim().toLowerCase(); return v?v.toUpperCase():"";}
   function setName(nm){var e=$("piname"); if(nm){e.textContent=nm; e.classList.remove("unnamed");} else {e.textContent="UNNAMED"; e.classList.add("unnamed");}}
 
-  function renderRoster(phases){
+  function renderRoster(phases, progress){
     var by={}; (phases||[]).forEach(function(p){by[p.name]=p.status;});
     var r=$("roster"); r.innerHTML="";
     ORDER.forEach(function(n){
@@ -583,14 +740,49 @@ HTML = r"""<!doctype html>
       var stamp=st==="done"?m[1]:st==="running"?"the hammer strikes":st==="error"?"the strike falters":"awaits the rite";
       var li=document.createElement("li"); li.className="is-"+cls;
       li.innerHTML='<span class="badge '+cls+'"><span>'+(st==="done"?"✦":st==="error"?"!":"")+'</span></span><span class="label"></span><span class="stamp">'+stamp+'</span>';
-      li.querySelector(".label").textContent=m[0]; r.appendChild(li);
+      li.querySelector(".label").textContent=m[0];
+      // Live DEBUG sub-line: only on the RUNNING row, only when we have progress
+      // text. It vanishes on completion because the row is rebuilt as "done".
+      if(st==="running" && progress && progress.text){
+        var sub=document.createElement("div"); sub.className="subline";
+        var hasPct=(progress.pct!=null && progress.pct>=0);
+        sub.innerHTML = hasPct
+          ? '<span class="sub-text"></span><span class="sub-bar"><i></i></span><span class="sub-pct"></span>'
+          : '<span class="sub-text"></span><span class="sub-dots"></span>';
+        sub.querySelector(".sub-text").textContent=progress.text;   // textContent: log is untrusted
+        if(hasPct){
+          var p=Math.max(0,Math.min(100,progress.pct));
+          sub.querySelector(".sub-bar i").style.width=p+"%";
+          sub.querySelector(".sub-pct").textContent=p+"%";
+        }
+        li.appendChild(sub);
+      }
+      r.appendChild(li);
     });
+  }
+  function renderChoice(s){
+    document.body.setAttribute("data-state","binding");
+    setName(s.pi_name||"the minion");
+    txt("eyebrow","THE RITE WAS INTERRUPTED");
+    txt("subtext","a previous binding was begun — choose your path");
+    ["form","roster","authcard","details","restartbar","gate"].forEach(function(id){ $(id).style.display="none"; });
+    document.body.classList.remove("forge-active");
+    $("choice").style.display="flex";
   }
   function applyState(s){
     $("gate").style.display="none";
     var ready=!!(s.result&&s.result.ready);
     var inBind = submitted || s.identity_submitted || ready || (s.pi_name&&s.pi_name.length>0);
     var stage = ready?"complete":(inBind?"binding":"identity");
+
+    // First-load detection of an interrupted run: a binding under way, not yet
+    // complete, with at least one phase already done. Decide armed-ness ONCE.
+    var somePhaseDone = (s.phases||[]).some(function(p){ return p.status==="done"; });
+    var partial = inBind && !ready && somePhaseDone;
+    if(choiceArmed===null){ choiceArmed = partial; }
+    if(choiceArmed && partial && !choiceDismissed){ renderChoice(s); return; }
+    $("choice").style.display="none";
+
     document.body.setAttribute("data-state", stage);
     var pn=(s.pi_name&&s.pi_name.length)?s.pi_name:(liveName()||"the minion");
     if(stage==="identity"){
@@ -609,7 +801,7 @@ HTML = r"""<!doctype html>
 
     $("form").style.display = stage==="identity"?"":"none";
     $("roster").style.display = stage==="identity"?"none":"";
-    if(stage!=="identity") renderRoster(s.phases);
+    if(stage!=="identity") renderRoster(s.phases, s.progress);
 
     var a=s.action, ac=$("authcard");
     var authShown = (stage==="binding" && a && a.active);
@@ -692,6 +884,18 @@ HTML = r"""<!doctype html>
         setTimeout(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; tick(); }, 700);
       })
       .catch(function(){ b.disabled=false; b.innerHTML="&#8635; Start over &mdash; unname the minion"; });
+  });
+  // Choice screen: CONTINUE just dismisses (shows the live checklist); BEGIN
+  // AGAIN resets everything via /restart and returns to the identity form.
+  function bindClick(id, fn){ var e=$(id); e.addEventListener("click", fn);
+    e.addEventListener("keydown", function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); fn(); } }); }
+  bindClick("choice-continue", function(){ choiceDismissed=true; $("choice").style.display="none"; tick(); });
+  bindClick("choice-again", function(){
+    if(!confirm("Begin again? This stops the interrupted rite and returns to naming the minion. Nothing already installed is undone.")) return;
+    choiceDismissed=true; $("choice").style.display="none";
+    fetch("/restart?k="+encodeURIComponent(K),{method:"POST"})
+      .then(function(){ submitted=false; nameTouched=false; choiceArmed=false; var inp=$("i-name"); if(inp) inp.value=""; setTimeout(tick,700); })
+      .catch(function(){ tick(); });
   });
   tick(); setInterval(tick, 1500);
 </script>

@@ -236,7 +236,13 @@ run_dance() {
   local rc=0
   if command -v script >/dev/null 2>&1; then
     # util-linux script: pty-backed, records to logf, -e returns child's status.
-    script -qec "$cmd" "$logf" || rc=$?
+    # -f (--flush) is CRITICAL: without it `script` buffers its typescript file
+    # writes, so a CLI that prints its auth URL (~100 bytes) and then BLOCKS
+    # waiting for the operator never fills the buffer — the log stays empty and
+    # the watcher never captures the URL (the live "empty Tailscale button" bug,
+    # reproduced on inkypi). -f flushes after every write so the URL lands in the
+    # log within a poll and the dashboard button gets its href.
+    script -qfec "$cmd" "$logf" || rc=$?
   else
     bash -c "$cmd" 2>&1 | tee "$logf" || true
     rc=${PIPESTATUS[0]}
