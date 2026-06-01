@@ -757,7 +757,7 @@ HTML = r"""<!doctype html>
             <p class="ssh-status" id="ssh-gen-status"></p>
           </div>
         </div>
-        <button class="btn btn-fire btn-block" type="button" id="begin">Begin the rite &rarr;</button>
+        <button class="btn btn-fire btn-block" type="button" id="begin">SUBJUGATE &rarr;</button>
         <p class="fmsg" id="fmsg2"></p>
         <a class="backlink" id="form-back" href="#" role="button">&larr; back to the minion's name</a>
         </div>
