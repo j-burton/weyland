@@ -289,24 +289,24 @@ def fire_ctx_alert(threshold, pct):
     hard_stop = threshold >= 80
     if hard_stop:
         action = (
-            "HARD CEILING HIT. "
-            "1) Tell CC to commit and push all in-progress work. "
-            "2) Tell CC to write a handoff doc under handoffs/ (what done, what next). "
-            "3) Start a fresh CC session pointed at the handoff. "
-            "Do NOT let CC cross 80%. Technical call — never consult Julian."
+            "80% HARD CEILING. Stop now. "
+            "1) Tell CC: commit and push everything in progress. "
+            "2) Tell CC: write handoffs/<date>-handoff.md — what was done, what is next. "
+            "3) Ctrl-C CC, start a fresh CC session, point it at the handoff doc. "
+            "Never let CC cross 80%. Your call — do not consult Julian."
         )
     else:
         action = (
-            f"Reassess now: is remaining work light enough to finish before 80%? "
-            "If not — tell CC to commit, write a handoff doc under handoffs/, "
-            "then restart CC fresh. Act early; don't wait for the 80% ping."
+            "Reassess: will remaining work push CC past 80%? "
+            "If yes — tell CC to commit, write handoffs/<date>-handoff.md, restart CC fresh. "
+            "If no — keep going but watch the next ping. Never consult Julian."
         )
     text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
     # Always ping the PC channel (chat-Claude).
     pc_url = read_kv(WAKE_ENV, "PC_WAKE_URL")
     pc_token = read_kv(WAKE_ENV, "WAKE_TOKEN")
     if pc_url and pc_token:
-        body = json.dumps({"shot": f"ctx-{threshold}", "text": text[:200]}).encode()
+        body = json.dumps({"shot": f"ctx-{threshold}", "text": text[:500]}).encode()
         req = urllib.request.Request(
             pc_url, data=body, method="POST",
             headers={"Content-Type": "application/json", "X-Wake-Token": pc_token})
