@@ -433,6 +433,42 @@ repo. To add a new fleet-wide secret, add it to that repo's `secrets.env`
 their next bootstrap. To rotate one, update the value there and re-run the
 bootstrap's vault step (or `install-wake.sh`) on each live minion.
 
+## Operating notes (hard-won)
+
+Lessons from real sessions — read these and skip the mistakes:
+
+- **Where weyland work happens.** The weyland clone is at `/tmp/wv`; push to
+  `j-burton/weyland`. The bootstrap's two files are `bootstrap/install.sh` and
+  `bootstrap/dashboard.py`. For small, well-understood fixes chat-Claude can edit
+  `/tmp/wv` directly via the connector (then `bash -n` / `python3 -m py_compile`,
+  commit, push). For larger builds, write a handoff doc under `handoffs/` and
+  relay it to CC.
+
+- **Restarting CC.** If CC's tmux session dies or wedges, bring it back with
+  `sudo systemctl restart weyland-cc.service`, or manually:
+  `tmux new-session -d -s <pi> -c <dir> 'bash -lc "exec claude --dangerously-skip-permissions"'`.
+  Always launch via a **login shell** (`bash -lc`) — bare `claude` is not on the
+  non-login PATH and dies instantly. Avoid `tmux kill-session` unless necessary;
+  killing the last session takes the whole tmux server down with it.
+
+- **Stuck composer drafts.** Occasionally a line sits unsent in CC's input box
+  and will not clear via Escape / C-c / C-u. Do NOT thrash the pane (that is how
+  sessions get wrecked). Either submit it if it is a benign, wanted instruction,
+  or just do the work yourself via the connector and leave the inert line alone.
+
+- **Argos is hands-off — and its wake flag is separate.** This Pi's wake lives at
+  `/etc/weyland/wake-mode` (re-arm with the connector's `restart_wake`). The
+  `argos-mcp` connector's `set_wake_mode` / `restart_wake` act on **argos**
+  (`/opt/atlas/cache/wake-mode`) — never use them to manage this Pi, and never
+  touch argos. The one argos verb that is fair game is `fire_pushcut` (the
+  notification channel to Julian's phone).
+
+- **Reading the live wizard.** A running stage goes amber after ~25s of silence,
+  red after ~60s, and `stalled` past a hard cap (shows even with the browser
+  closed). External logins pop as a centered modal and time out (~15m) if
+  unfinished. SSH key import is paste-the-public-key (one per-OS command prints
+  it) — there is no file picker.
+
 ## When in doubt
 
 Read the three orientation files again. Then ask Julian what he wants.
