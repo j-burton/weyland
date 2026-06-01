@@ -692,6 +692,10 @@ HTML = r"""<!doctype html>
   @keyframes bloodglow{0%,100%{box-shadow:0 0 0 1px #0b0405 inset,0 0 18px #8b1a1a44}50%{box-shadow:0 0 0 1px #0b0405 inset,0 0 40px #c0392b88}}
   .authcard h3{margin:0; font-family:var(--cinzel); font-weight:700; font-size:18px; letter-spacing:.04em; text-transform:uppercase; color:#ff5a4a; text-shadow:0 1px 0 #7a1410,0 2px 3px rgba(0,0,0,.5),0 0 18px #c0392b66}
   .authcard .sub{margin:6px 0 15px; font-family:var(--serif); font-style:italic; font-size:13.5px; color:#e8b0a4}
+  /* External login needed: lift the auth card into a centred modal over a
+     dimmed checklist so it can't be missed at the bottom of the page. */
+  body.auth-modal .app::after{content:""; position:fixed; inset:0; background:rgba(8,4,4,.72); backdrop-filter:blur(2px); z-index:40}
+  body.auth-modal #authcard{position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:50; width:calc(100% - 28px); max-width:460px; margin:0}
   .authrow{display:flex; gap:11px; align-items:stretch; flex-wrap:wrap}
   .rune{flex:0 0 auto; font-family:var(--mono); font-size:23px; font-weight:700; letter-spacing:.22em; color:var(--ink); background:#160404; border:1px solid var(--blood); border-radius:8px; padding:8px 16px; text-shadow:0 0 14px #c0392b66; box-shadow:0 0 0 1px #000 inset,0 0 18px #8b1a1a44}
   .instr{margin:13px 0 0; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:#c79c92; text-transform:uppercase}
@@ -1028,6 +1032,7 @@ HTML = r"""<!doctype html>
       if(a.code){code.textContent=a.code; code.style.display=""; cp.style.display="";} else {code.style.display="none"; cp.style.display="none";}
       ac.style.display="";
     } else ac.style.display="none";
+    document.body.classList.toggle("auth-modal", !!authShown);
 
     // Top activity bar: a phase is forging and no auth card is up — proof the
     // forge is alive even when the page would otherwise look idle.
