@@ -289,17 +289,23 @@ def fire_ctx_alert(threshold, pct):
     hard_stop = threshold >= 80
     if hard_stop:
         action = (
-            "80% HARD CEILING. Stop now. "
-            "1) Tell CC: commit and push everything in progress. "
-            "2) Tell CC: write handoffs/<date>-handoff.md — what was done, what is next. "
-            "3) Ctrl-C CC, start a fresh CC session, point it at the handoff doc. "
-            "Never let CC cross 80%. Your call — do not consult Julian."
+            "STOP. "
+            "Tell CC to commit and push now. "
+            "Tell CC to write handoffs/<date>-handoff.md. "
+            "Ctrl-C CC. Start fresh session. No exceptions."
+        )
+    elif threshold >= 70:
+        action = (
+            "FINAL WARNING: wrap up this task now. "
+            "Tell CC to commit, write handoffs/<date>-handoff.md, then restart CC fresh. "
+            "Do not start any new tasks in this session."
         )
     else:
         action = (
-            "Reassess: will remaining work push CC past 80%? "
-            "If yes — tell CC to commit, write handoffs/<date>-handoff.md, restart CC fresh. "
-            "If no — keep going but watch the next ping. Never consult Julian."
+            "WARNING: plan your exit now. "
+            "If remaining work is anything more than trivial, "
+            "tell CC to commit, write a handoff doc, and restart fresh. "
+            "Do not let CC reach 80%."
         )
     text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
     # Always ping the PC channel (chat-Claude).
