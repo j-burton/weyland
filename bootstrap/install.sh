@@ -1149,22 +1149,29 @@ EOF
   _configure_cc_statusline
 
   # Step 3: launch CC inside a long-lived tmux session named after the Pi.
-  if ! tmux has-session -t "$PI_NAME" 2>/dev/null; then
-    log "starting tmux session '${PI_NAME}' running CC"
-    # Run claude directly — no `| tee`. Piping CC's stdout breaks its
-    # interactive TTY ("Input must be provided either through stdin or as a
-    # prompt argument when using --print"). CC keeps its own logs; the tmux
-    # session is the live view.
-    # Launch via a LOGIN shell (bash -lc) so ~/.profile puts ~/.local/bin — where
-    # the claude installer drops the binary — on PATH. A bare command would run on
-    # tmux's minimal non-login PATH and die instantly ("claude: not found").
-    tmux new-session -d -s "$PI_NAME" -c "${PI_DIR:-$HOME}" \
-      "bash -lc 'exec claude --dangerously-skip-permissions'"
-    # Note: --dangerously-skip-permissions is the "trust the minion" mode
-    # matching the connector's philosophy. The user accepts the risk.
+  # RECREATE it here (rather than skip-if-exists) so the session always starts
+  # AFTER the sign-in above and inherits the credentials now on disk. A session
+  # lingering from BEFORE sign-in — e.g. one the boot service started after a
+  # mid-setup reboot — would otherwise sit logged-out at its own login screen,
+  # forcing a second manual sign-in and stalling every later step that drives CC.
+  # Killing + relaunching guarantees the wizard's single sign-in covers CC too.
+  if tmux has-session -t "$PI_NAME" 2>/dev/null; then
+    log "recreating tmux session '${PI_NAME}' so CC inherits the sign-in"
+    tmux kill-session -t "$PI_NAME" 2>/dev/null || true
   else
-    log "tmux session '${PI_NAME}' already exists"
+    log "starting tmux session '${PI_NAME}' running CC"
   fi
+  # Run claude directly — no `| tee`. Piping CC's stdout breaks its
+  # interactive TTY ("Input must be provided either through stdin or as a
+  # prompt argument when using --print"). CC keeps its own logs; the tmux
+  # session is the live view.
+  # Launch via a LOGIN shell (bash -lc) so ~/.profile puts ~/.local/bin — where
+  # the claude installer drops the binary — on PATH. A bare command would run on
+  # tmux's minimal non-login PATH and die instantly ("claude: not found").
+  tmux new-session -d -s "$PI_NAME" -c "${PI_DIR:-$HOME}" \
+    "bash -lc 'exec claude --dangerously-skip-permissions'"
+  # Note: --dangerously-skip-permissions is the "trust the minion" mode
+  # matching the connector's philosophy. The user accepts the risk.
 
   # Step 4: arrange for the tmux session to survive reboot.
   # Written every run (not just when absent) so an existing Pi picks up unit
