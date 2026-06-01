@@ -18,10 +18,18 @@ After shot 5 the cycle locks until CC leaves the idle state.
 
 Stable hashing + 2-poll candidate debounce preserved from Atlas — these
 are the engineering that makes the watcher reliable, not Atlas-specific.
+
+Second, INDEPENDENT concern: context-window pressure. The weyland status line
+(bootstrap/cc-status.sh) prints "ctx NN%" in the pane once usage hits 50%. We
+grep that out and Pushcut Julian as it crosses 60/70/80/90% (>= each, so a jump
+between polls is never missed), once per threshold, escalating as it rises, and
+reset after a compaction so a later climb re-alerts. This runs on its own state
+file and never touches the idle ladder above.
 """
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.error
@@ -50,6 +58,18 @@ DEBOUNCE_POLLS = 2
 CLEAR_DEBOUNCE = 2
 
 RETRY_SCHEDULE = SHOT_GAPS_SEC
+
+# --- Context-window pressure (independent of the idle ladder) ---------------
+# The weyland status line prints "ctx NN%" in the pane from 50% up. Pushcut
+# Julian as it crosses these thresholds (>= each), once per crossing, escalating
+# as it rises. Its own state file so it never disturbs the idle escalation.
+CTX_THRESHOLDS = [60, 70, 80, 90]
+CTX_RE = re.compile(r"ctx\s*(\d{1,3})\s*%", re.IGNORECASE)
+CTX_STATE_FILE = "/var/lib/weyland/ctx-watcher-state.json"
+# Consecutive polls with the marker ABSENT before we treat context as reset
+# (compaction/clear). Bigger than the idle CLEAR_DEBOUNCE so a brief UI hide of
+# the status line (autocomplete, help, permission prompt) doesn't flap.
+CTX_CLEAR_POLLS = 5
 
 # This CC runs with --dangerously-skip-permissions: no permission prompts.
 # It is idle (done, waiting for input) when the bypass-permissions indicator
@@ -220,14 +240,135 @@ def fire(block, shot):
     return mode
 
 
+# ---------------------------------------------------------------------------
+# Context-window pressure monitor (independent of the idle ladder above).
+# ---------------------------------------------------------------------------
+def parse_context_pct(text):
+    """Highest 'ctx NN%' value the status line shows in the pane, or None if the
+    marker isn't present (context < 50%, or the line is momentarily hidden)."""
+    if not text:
+        return None
+    vals = [int(m) for m in CTX_RE.findall(text)]
+    vals = [v for v in vals if 0 <= v <= 100]
+    return max(vals) if vals else None
+
+
+def read_ctx_state():
+    try:
+        with open(CTX_STATE_FILE) as f:
+            s = json.load(f)
+    except Exception:
+        s = {}
+    return {
+        "fired": s.get("fired", 0),            # highest threshold alerted this cycle
+        "cand_target": s.get("cand_target", 0),  # threshold awaiting debounce
+        "cand_count": s.get("cand_count", 0),
+        "absent_count": s.get("absent_count", 0),
+    }
+
+
+def write_ctx_state(s):
+    try:
+        os.makedirs(os.path.dirname(CTX_STATE_FILE), exist_ok=True)
+        with open(CTX_STATE_FILE, "w") as f:
+            json.dump(s, f)
+    except Exception as e:
+        log(f"ctx-state-write-err err={type(e).__name__}")
+
+
+def fire_ctx_pushcut(threshold, pct):
+    """Pushcut Julian about context pressure. Honours wake-mode like the idle
+    ladder; context alerts go to the phone only (no PC nudge — this is a
+    'wrap up' heads-up, not a stuck-CC escalation)."""
+    mode = read_mode()
+    if mode == "off":
+        log(f"ctx-fire-skipped mode=off threshold={threshold} pct={pct}")
+        return
+    secret = read_kv(PUSHCUT_ENV, "PUSHCUT_WEBHOOK_SECRET")
+    if not secret:
+        log(f"ctx-pushcut-no-secret threshold={threshold}")
+        return
+    url = f"https://api.pushcut.io/{secret}/notifications/CC_Needs_Julian"
+    text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — "
+            f"wrap up / commit before it fills")
+    body = json.dumps({"text": text[:200]}).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            log(f"ctx-pushcut http={r.status} threshold={threshold} pct={pct}")
+    except urllib.error.HTTPError as e:
+        log(f"ctx-pushcut http={e.code} threshold={threshold}")
+    except Exception as e:
+        log(f"ctx-pushcut err={type(e).__name__} threshold={threshold}")
+
+
+def check_context(pane):
+    """One poll of the context-pressure monitor. Fires once per threshold as the
+    percentage rises (>= each → a between-poll jump is never missed), then resets
+    after the context drops/compacts so a later climb re-alerts from the bottom."""
+    pct = parse_context_pct(pane)
+    st = read_ctx_state()
+    fired = st["fired"]
+    cand_target = st["cand_target"]
+    cand_count = st["cand_count"]
+    absent_count = st["absent_count"]
+
+    if pct is None:
+        # Marker absent: context < 50%, or the status line is briefly hidden.
+        # Reset only after a sustained absence so transient hides don't flap.
+        absent_count += 1
+        if absent_count >= CTX_CLEAR_POLLS and fired != 0:
+            log(f"ctx-reset reason=absent fired_was={fired}")
+            fired = 0
+        write_ctx_state({"fired": fired, "cand_target": 0,
+                         "cand_count": 0, "absent_count": absent_count})
+        return
+
+    if pct < CTX_THRESHOLDS[0]:
+        # Positively below the lowest threshold → context dropped (compaction /
+        # clear). Reset immediately so the next climb re-alerts from 60%.
+        if fired != 0 or cand_target != 0:
+            log(f"ctx-reset reason=below pct={pct} fired_was={fired}")
+        write_ctx_state({"fired": 0, "cand_target": 0,
+                         "cand_count": 0, "absent_count": 0})
+        return
+
+    target = max(t for t in CTX_THRESHOLDS if pct >= t)
+    if target > fired:
+        # Debounce: confirm the same target for DEBOUNCE_POLLS polls before
+        # firing, so a one-off misread never alerts. Firing the HIGHEST newly
+        # crossed threshold (and marking it fired) escalates without spamming a
+        # separate alert for every level a single jump blew past.
+        if cand_target == target:
+            cand_count += 1
+        else:
+            cand_target = target
+            cand_count = 1
+        if cand_count >= DEBOUNCE_POLLS:
+            fire_ctx_pushcut(target, pct)
+            log(f"ctx-fire threshold={target} pct={pct}")
+            write_ctx_state({"fired": target, "cand_target": 0,
+                             "cand_count": 0, "absent_count": 0})
+        else:
+            write_ctx_state({"fired": fired, "cand_target": cand_target,
+                             "cand_count": cand_count, "absent_count": 0})
+    else:
+        # At or below an already-alerted level — clear any stale candidate.
+        write_ctx_state({"fired": fired, "cand_target": 0,
+                         "cand_count": 0, "absent_count": 0})
+
+
 def main():
     log(f"watcher-start pi={PI_NAME} pane={PANE} initial_delay={INITIAL_DELAY_SEC} "
         f"shot_gaps={SHOT_GAPS_SEC} max_fires={MAX_FIRES} "
-        f"debounce_polls={DEBOUNCE_POLLS}")
+        f"debounce_polls={DEBOUNCE_POLLS} ctx_thresholds={CTX_THRESHOLDS}")
     no_marker_polls = 0
     while True:
         try:
             pane = capture_pane()
+            check_context(pane)   # independent context-pressure alerts
             block = detect_prompt(pane)
             sig = stable_signature(block) if block is not None else None
             state = read_state()

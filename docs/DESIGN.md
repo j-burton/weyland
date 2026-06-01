@@ -89,6 +89,12 @@ wake system mirrors Atlas's PC channel, with phone paging as the backstop:
   (gaps 10s → 60s → 60s → 480s → 600s). Shots 1–4 are PC-only (they wake
   chat-Claude); only the final shot also Pushcuts Julian's phone — by then
   chat-Claude is unreachable and a human must step in.
+- The same watcher also runs an **independent context-pressure monitor**: the
+  weyland status line (`bootstrap/cc-status.sh`, wired into `settings.json`)
+  prints `ctx NN%` in the pane from 50% up, and the watcher Pushcuts Julian as
+  it crosses **60 / 70 / 80 / 90%** (≥ each, so a between-poll jump is never
+  missed), once per crossing, escalating as it climbs and resetting after a
+  compaction. This is phone-only and separate from the idle ladder.
 
 The PC end is a small AutoHotkey listener (`docs/pc-wake-listener.ahk`) on
 port 7777, gated by a shared `X-Wake-Token`. The minion's PC hostname and

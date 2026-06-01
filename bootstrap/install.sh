@@ -934,6 +934,45 @@ EOF
 # ----------------------------------------------------------------------
 # Phase 6 — Claude Code
 # ----------------------------------------------------------------------
+# Install the weyland status line (bootstrap/cc-status.sh → ~/.claude/cc-status.sh)
+# and wire it into Claude Code's settings.json. The merge is additive — it never
+# clobbers existing keys (the cc-notify Notification hook, theme, etc.). The
+# status line shows context-window usage from 50% up; cc-tmux-watcher greps that
+# same "ctx NN%" out of the pane for its 60/70/80/90% Pushcut alerts. Idempotent.
+_configure_cc_statusline() {
+  local weyland_dir src dst settings
+  weyland_dir="$(resolve_weyland_dir)"
+  src="${weyland_dir}/bootstrap/cc-status.sh"
+  dst="${HOME}/.claude/cc-status.sh"
+  settings="${HOME}/.claude/settings.json"
+  if [ ! -f "$src" ]; then
+    warn "cc-status.sh not found (${src}); status line skipped"
+    return 0
+  fi
+  mkdir -p "${HOME}/.claude"
+  install -m 0755 "$src" "$dst"
+  WEYLAND_CC_STATUS="$dst" WEYLAND_CC_SETTINGS="$settings" python3 - <<'PY'
+import json, os, tempfile
+settings = os.environ["WEYLAND_CC_SETTINGS"]
+cmd = os.environ["WEYLAND_CC_STATUS"]
+try:
+    with open(settings) as f:
+        s = json.load(f)
+    if not isinstance(s, dict):
+        s = {}
+except Exception:
+    s = {}
+s["statusLine"] = {"type": "command", "command": cmd, "padding": 1}
+d = os.path.dirname(settings) or "."
+os.makedirs(d, exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=d)
+with os.fdopen(fd, "w") as f:
+    json.dump(s, f, indent=2)
+os.replace(tmp, settings)
+PY
+  log "status line wired into settings.json (${dst})"
+}
+
 phase_claude_code() {
   log "Phase 6: install Claude Code"
 
@@ -971,6 +1010,10 @@ EOF
   else
     log "Claude Code already signed in"
   fi
+
+  # Step 2.5: weyland status line (context % from 50% up) — set BEFORE the tmux
+  # CC session launches so Claude Code picks it up at startup.
+  _configure_cc_statusline
 
   # Step 3: launch CC inside a long-lived tmux session named after the Pi.
   if ! tmux has-session -t "$PI_NAME" 2>/dev/null; then
