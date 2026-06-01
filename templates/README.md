@@ -315,11 +315,12 @@ and pick up any parked questions before you close out.
 
 On any task expected to take more than 5–10 minutes, **check the CC pane
 periodically — not only when a wake ping arrives.** Watch especially for
-context-usage warnings (97%+): the moment you see one, **interrupt CC and have
-it commit immediately**, before context is exhausted and uncommitted work is
-lost. Pings fire only when CC explicitly asks for attention; a CC that is
-quietly grinding (or about to blow its context) won't ping, so periodic
-`tmux_capture_pane` reads are the only way to catch it in time.
+context pressure. The watcher Pushcuts Julian at 60/70/80/90% (`ctx NN%` is
+visible in the CC status bar from 50% up). **At 90%+ interrupt CC and have it
+commit and summarise immediately** — don't wait for it to finish, because at
+100% all uncommitted work is lost. Pings fire only when CC explicitly asks for
+attention or crosses a ctx threshold; a CC that is quietly grinding won't ping,
+so periodic `tmux_capture_pane` reads are the only way to catch it in time.
 
 ### Standing rule: keep docs in sync, proactively
 
