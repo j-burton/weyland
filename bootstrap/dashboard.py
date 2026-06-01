@@ -576,7 +576,7 @@ HTML = r"""<!doctype html>
   .glyph{font-style:normal; display:inline-block; margin-right:9px; color:var(--flame); text-shadow:0 0 12px var(--flame); animation:emberpulse 2.1s ease-in-out infinite}
   body[data-state="complete"] .glyph{color:var(--gold); text-shadow:0 0 12px var(--gold)}
   @keyframes emberpulse{0%,100%{opacity:1; text-shadow:0 0 14px var(--flame)}50%{opacity:.45; text-shadow:0 0 5px var(--flame)}}
-  .stage{flex:1 1 0; min-height:0; overflow:auto; margin-top:8px}
+  .stage{flex:1 1 0; min-height:0; overflow-y:auto; overflow-x:hidden; margin-top:8px}
   .forge-form{border:1px solid var(--line2); border-radius:12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:14px; position:relative; overflow:hidden}
   .forge-form::after{content:""; position:absolute; inset:0; background-image:var(--grain); background-size:150px 150px; opacity:.05; mix-blend-mode:overlay; pointer-events:none}
   .forge-form h3{margin:0 0 3px; font-family:var(--cinzel); font-weight:700; font-size:16px; letter-spacing:.05em; text-transform:uppercase; color:var(--flame-bright); text-shadow:0 1px 0 #7a3c08,0 0 16px #e8750a44}
@@ -587,7 +587,7 @@ HTML = r"""<!doctype html>
   .frow input{width:100%; font-family:var(--mono); font-size:13.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:8px 11px}
   .frow input::placeholder{color:#6f6753}
   .frow input:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
-  .frow textarea{width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; resize:vertical; line-height:1.4; white-space:pre; overflow-x:auto}
+  .frow textarea{width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; resize:vertical; line-height:1.4; white-space:pre-wrap; word-break:break-all; overflow-x:hidden}
   .frow textarea::placeholder{color:#6f6753}
   .frow textarea:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
   .pair{display:grid; grid-template-columns:1fr 1fr; gap:9px} @media (max-width:340px){.pair{grid-template-columns:1fr}}
@@ -722,7 +722,7 @@ HTML = r"""<!doctype html>
   .field{margin:12px 0} .field:first-child{margin-top:0}
   .field label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
   .copybox{display:flex; gap:8px; align-items:stretch}
-  .val{flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; overflow-x:auto; white-space:nowrap}
+  .val{flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; overflow-x:hidden; white-space:pre-wrap; overflow-wrap:anywhere}
   a.val{display:block; text-decoration:none; color:var(--flame-bright)} a.val:hover{text-decoration:underline}
   textarea.val{white-space:pre-wrap; word-break:break-word; height:104px; resize:vertical; line-height:1.45; width:100%}
   input.val{width:100%}
