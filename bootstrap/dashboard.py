@@ -211,11 +211,18 @@ def write_identity(form) -> bool:
     name = (form.get("pi_name", [""])[0] or "").strip().lower()
     if not NAME_RE.match(name):
         return False
+    # SSH public keys are a single line; take the first non-empty line so a
+    # paste with a trailing newline stays one line (the bash side reads this
+    # positionally). The password is taken verbatim (spaces may be intentional).
+    ssh_raw = form.get("ssh_key", [""])[0] or ""
+    ssh_key = next((ln.strip() for ln in ssh_raw.splitlines() if ln.strip()), "")
     data = {
         "pi_name": name,
         "domain": (form.get("domain", [""])[0] or "").strip(),
         "pc_wake": (form.get("pc_wake", [""])[0] or "").strip(),
         "wake_token": (form.get("wake_token", [""])[0] or "").strip(),
+        "new_password": form.get("new_password", [""])[0] or "",
+        "ssh_key": ssh_key,
     }
     d = os.path.dirname(IDENTITY_FILE) or "."
     tmp = os.path.join(d, ".identity.tmp")
@@ -500,21 +507,21 @@ HTML = r"""<!doctype html>
   .topbar{display:flex; align-items:center; justify-content:flex-start; gap:10px; flex:0 0 auto}
   .sigil{font-family:var(--mono); font-size:10.5px; letter-spacing:.24em; color:var(--flame); opacity:.9}
   .sigil b{color:var(--ink); opacity:.65}
-  .hero{flex:0 0 auto; text-align:center; padding:14px 0 8px}
+  .hero{flex:0 0 auto; text-align:center; padding:8px 0 4px}
   /* eyebrow — Cinzel 400, widely spaced, with a subtle 1-2px raise */
-  .eyebrow{margin:0 0 13px; font-family:var(--cinzel); font-weight:400; font-size:12px; letter-spacing:.34em; text-transform:uppercase; color:var(--flame); text-shadow:0 1px 0 #7a3c08,0 2px 2px rgba(0,0,0,.45)}
+  .eyebrow{margin:0 0 7px; font-family:var(--cinzel); font-weight:400; font-size:11px; letter-spacing:.34em; text-transform:uppercase; color:var(--flame); text-shadow:0 1px 0 #7a3c08,0 2px 2px rgba(0,0,0,.45)}
   body[data-state="complete"] .eyebrow{color:var(--gold); text-shadow:0 1px 0 #6e5212,0 2px 2px rgba(0,0,0,.45)}
-  .plate{display:inline-block; max-width:100%; padding:15px 30px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
+  .plate{display:inline-block; max-width:100%; padding:10px 24px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
   /* hero Pi name — hot iron letters STAMPED into cold steel: Cinzel 700, a
      parchment->ember gradient fill, and a layered text-shadow that raises the
      glyphs 3-4px off the plate. */
-  .name{margin:0; font-family:var(--cinzel); font-weight:700; letter-spacing:.1em; line-height:1.08; font-size:clamp(26px,7.5vw,50px); word-break:break-word; color:#f3b06a; text-shadow:0 1px 0 #ff9040,0 2px 0 #c45a08,0 3px 0 #8a3a05,0 4px 0 #5a2503,0 5px 8px rgba(0,0,0,.6),0 0 26px #e8750a44}
+  .name{margin:0; font-family:var(--cinzel); font-weight:700; letter-spacing:.1em; line-height:1.05; font-size:clamp(22px,6.2vw,40px); word-break:break-word; color:#f3b06a; text-shadow:0 1px 0 #ff9040,0 2px 0 #c45a08,0 3px 0 #8a3a05,0 4px 0 #5a2503,0 5px 8px rgba(0,0,0,.6),0 0 26px #e8750a44}
   @supports ((-webkit-background-clip:text) or (background-clip:text)){
     .name{background:linear-gradient(180deg,#fff3e0 2%,#ff8c1a 50%,#c45a08 94%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent}
     body[data-state="complete"] .name{background:linear-gradient(180deg,#fff6dd 2%,#d4a017 55%,#a07a10 96%); -webkit-background-clip:text; background-clip:text}
   }
   .name.unnamed{opacity:.55; letter-spacing:.24em}
-  .subtitle{margin:12px 0 0; font-family:var(--serif); font-style:italic; font-size:15px; color:var(--ink)}
+  .subtitle{margin:7px 0 0; font-family:var(--serif); font-style:italic; font-size:13px; color:var(--ink)}
   .glyph{font-style:normal; display:inline-block; margin-right:9px; color:var(--flame); text-shadow:0 0 12px var(--flame); animation:emberpulse 2.1s ease-in-out infinite}
   body[data-state="complete"] .glyph{color:var(--gold); text-shadow:0 0 12px var(--gold)}
   @keyframes emberpulse{0%,100%{opacity:1; text-shadow:0 0 14px var(--flame)}50%{opacity:.45; text-shadow:0 0 5px var(--flame)}}
@@ -529,19 +536,22 @@ HTML = r"""<!doctype html>
   .frow input{width:100%; font-family:var(--mono); font-size:14px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:11px 12px}
   .frow input::placeholder{color:#6f6753}
   .frow input:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
+  .frow textarea{width:100%; font-family:var(--mono); font-size:12.5px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; resize:vertical; line-height:1.4; white-space:pre; overflow-x:auto}
+  .frow textarea::placeholder{color:#6f6753}
+  .frow textarea:focus{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame),0 0 16px #e8750a33; outline:none}
   .pair{display:grid; grid-template-columns:1fr 1fr; gap:12px} @media (max-width:560px){.pair{grid-template-columns:1fr}}
   .fmsg{font-family:var(--mono); font-size:11px; letter-spacing:.08em; margin:10px 0 0; min-height:14px; color:#e88}
   .roster{list-style:none; margin:0; padding:0}
-  .roster li{display:flex; flex-wrap:wrap; align-items:center; gap:13px; padding:7px 6px; border-bottom:1px solid #2e3744}
+  .roster li{display:flex; flex-wrap:wrap; align-items:center; gap:11px; padding:4px 6px; border-bottom:1px solid #2e3744}
   .roster li:last-child{border-bottom:0}
-  .badge{flex:0 0 auto; width:22px; height:22px; border-radius:5px; transform:rotate(45deg); display:grid; place-items:center; border:1px solid}
-  .badge span{transform:rotate(-45deg); font-size:11px; font-weight:700; line-height:1}
+  .badge{flex:0 0 auto; width:18px; height:18px; border-radius:5px; transform:rotate(45deg); display:grid; place-items:center; border:1px solid}
+  .badge span{transform:rotate(-45deg); font-size:9.5px; font-weight:700; line-height:1}
   .badge.done{background:#2b2410; color:var(--gold); border-color:#6e5212; box-shadow:0 0 12px #d4a01726}
   .badge.run{background:#2e1a06; color:var(--flame-bright); border-color:var(--flame); box-shadow:0 0 16px #e8750a66; animation:anvil 1.4s ease-in-out infinite}
   .badge.pend{background:#252d38; color:var(--leather); border-color:#414c5c}
   .badge.error{background:#2a0a0a; color:#ff6f61; border-color:#7a261c}
   @keyframes anvil{0%,100%{box-shadow:0 0 7px #e8750a44}50%{box-shadow:0 0 22px #e8750aaa}}
-  .roster .label{flex:1; font-family:var(--cinzel); font-weight:400; font-size:15px; letter-spacing:.01em}
+  .roster .label{flex:1; font-family:var(--cinzel); font-weight:400; font-size:14px; letter-spacing:.01em}
   li.is-pend .label{color:var(--muted)} li.is-done .label{color:var(--ink)} li.is-error .label{color:#ffb3a8}
   li.is-run .label{color:#ffd9a0; text-shadow:0 0 10px #e8750a44}
   .stamp{font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; text-align:right}
@@ -551,7 +561,7 @@ HTML = r"""<!doctype html>
   @keyframes forgesweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
   /* live progress sub-line on the RUNNING row — a plain-English DEBUG window
      (real tool names, not mythology); removed the instant the phase completes */
-  .subline{flex:0 0 100%; margin:3px 0 1px 35px; display:flex; align-items:center; gap:9px;
+  .subline{flex:0 0 100%; margin:1px 0 2px 29px; display:flex; align-items:center; gap:9px;
     font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:var(--muted); min-height:14px}
   .sub-text{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:0 1 auto}
   .sub-bar{flex:0 0 88px; height:5px; background:#1a212a; border:1px solid var(--line); border-radius:3px; overflow:hidden}
@@ -649,6 +659,14 @@ HTML = r"""<!doctype html>
           <div class="frow"><label for="i-tok">Wake token <span class="opt">&middot; optional</span></label>
             <input id="i-tok" type="text" autocomplete="off" spellcheck="false" placeholder="X-Wake-Token"></div>
         </div>
+        <div class="pair">
+          <div class="frow"><label for="i-pw">Change Pi password <span class="opt">&middot; optional</span></label>
+            <input id="i-pw" type="password" autocomplete="new-password" placeholder="blank = keep current"></div>
+          <div class="frow"><label for="i-pw2">Confirm password</label>
+            <input id="i-pw2" type="password" autocomplete="new-password" placeholder="re-enter to confirm"></div>
+        </div>
+        <div class="frow"><label for="i-ssh">Import SSH public key <span class="opt">&middot; optional &middot; disables password login</span></label>
+          <textarea id="i-ssh" rows="2" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA&hellip;  (paste a public key for key-only SSH)"></textarea></div>
         <button class="btn btn-fire btn-block" type="button" id="begin">Begin the rite &rarr;</button>
         <p class="fmsg" id="fmsg"></p>
       </section>
@@ -850,8 +868,10 @@ HTML = r"""<!doctype html>
   $("begin").addEventListener("click", function(){
     var nm=$("i-name").value.trim().toLowerCase(), m=$("fmsg");
     if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(nm)){ m.style.color="#e88"; m.textContent="a true name, my Lord: lowercase letters, digits, hyphens (2–32)"; return; }
+    var pw=$("i-pw").value, pw2=$("i-pw2").value, ssh=$("i-ssh").value.trim();
+    if(pw && pw!==pw2){ m.style.color="#e88"; m.textContent="the passwords do not match, my Lord"; return; }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
-    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim());
+    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_key="+encodeURIComponent(ssh);
     fetch("/identity?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
       .then(function(r){ if(r.ok){ submitted=true; m.textContent=""; tick(); } else { m.style.color="#e88"; m.textContent="the forge refused that name"; } })
       .catch(function(){ m.style.color="#e88"; m.textContent="the forge could not be reached"; });

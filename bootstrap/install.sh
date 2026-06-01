@@ -551,15 +551,57 @@ except Exception:
     d = {}
 for k in ("pi_name", "domain", "pc_wake", "wake_token"):
     print(str(d.get(k, "") or "").strip())
+# new_password: verbatim (spaces may be intentional). ssh_key: single line.
+print(str(d.get("new_password", "") or ""))
+print(str(d.get("ssh_key", "") or "").strip())
 PY
   )
   PI_NAME="${_vals[0]:-}"; DOMAIN="${_vals[1]:-}"
   IDENT_PC_HOST="${_vals[2]:-}"; IDENT_WAKE_TOK="${_vals[3]:-}"
+  IDENT_NEW_PASSWORD="${_vals[4]:-}"; IDENT_SSH_KEY="${_vals[5]:-}"
   if ! [[ "$PI_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
     warn "the wizard returned an invalid name ('${PI_NAME}') — prompting in the terminal."
     _identity_from_terminal "$default_name"
   else
     log "received from the wizard: PI_NAME=${PI_NAME}"
+  fi
+}
+
+# Import an SSH public key for the service user and switch SSH to key-only auth.
+# Heavily guarded: we VALIDATE the key looks real and that sshd accepts the new
+# config BEFORE disabling password auth, so a bad key can never lock the operator
+# out. No-op for an unrecognised key.
+_import_ssh_key() {
+  local key="$1"
+  case "$key" in
+    ssh-ed25519\ *|ssh-rsa\ *|ssh-dss\ *|ecdsa-sha2-*\ *|sk-ssh-ed25519@openssh.com\ *|sk-ecdsa-sha2-*\ *) : ;;
+    *) warn "imported SSH key is not a recognised public key — skipping (SSH unchanged)"; return 0 ;;
+  esac
+  local ak="${HOME}/.ssh/authorized_keys"
+  mkdir -p "${HOME}/.ssh" && chmod 700 "${HOME}/.ssh"
+  touch "$ak" && chmod 600 "$ak"
+  if grep -qxF "$key" "$ak" 2>/dev/null; then
+    log "SSH key already present in authorized_keys"
+  else
+    printf '%s\n' "$key" >> "$ak" && log "SSH public key imported to authorized_keys"
+  fi
+  # Disable password auth. A drop-in named 00-* is read before cloud-init's
+  # 50-*.conf (sshd uses the first value), so it reliably wins; we also patch
+  # the main file. Validate with `sshd -t` and revert if it would break sshd.
+  local dropin="/etc/ssh/sshd_config.d/00-weyland-keyonly.conf"
+  [ -d /etc/ssh/sshd_config.d ] && printf 'PasswordAuthentication no\n' | sudo tee "$dropin" >/dev/null
+  if sudo grep -qE '^[#[:space:]]*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null; then
+    sudo sed -i -E 's/^[#[:space:]]*PasswordAuthentication[[:space:]].*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  else
+    printf 'PasswordAuthentication no\n' | sudo tee -a /etc/ssh/sshd_config >/dev/null
+  fi
+  if sudo sshd -t 2>/dev/null; then
+    sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null \
+      || sudo systemctl restart ssh 2>/dev/null || true
+    log "SSH password auth disabled — key-only login is now in force"
+  else
+    warn "sshd config test failed — reverting key-only change to avoid lockout"
+    sudo rm -f "$dropin" 2>/dev/null || true
   fi
 }
 
@@ -584,7 +626,7 @@ phase_identity() {
   fi
 
   # Gather identity from the browser when the wizard is live, else the terminal.
-  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""
+  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""; IDENT_NEW_PASSWORD=""; IDENT_SSH_KEY=""
   if _dashboard_active; then
     _identity_from_browser "$default_name"
   else
@@ -613,6 +655,41 @@ phase_identity() {
   else
     save_state PC_WAKE_URL ""; save_state WAKE_TOKEN ""
     log "PC wake channel skipped (Pushcut-only)"
+  fi
+
+  # Optional: change the service user's password (from the wizard's password
+  # field). Blank = leave it unchanged. printf (not echo) so backslashes etc.
+  # in the password are taken literally.
+  if [ -n "${IDENT_NEW_PASSWORD:-}" ]; then
+    if printf '%s:%s\n' "$(id -un)" "$IDENT_NEW_PASSWORD" | sudo chpasswd 2>/dev/null; then
+      log "admin password changed (via wizard)"
+    else
+      warn "could not change admin password"
+    fi
+  fi
+
+  # Optional: import an SSH public key and switch SSH to key-only auth.
+  if [ -n "${IDENT_SSH_KEY:-}" ]; then
+    _import_ssh_key "$IDENT_SSH_KEY"
+  fi
+
+  # Scrub the plaintext password out of identity.json now that it's applied, so
+  # it doesn't linger on disk (the public key is left — it isn't a secret).
+  if [ -n "${IDENT_NEW_PASSWORD:-}" ] && [ -f "$STATE_DIR/identity.json" ]; then
+    python3 - "$STATE_DIR/identity.json" <<'PY' 2>/dev/null || true
+import json, os, sys, tempfile
+p = sys.argv[1]
+try:
+    d = json.load(open(p))
+except Exception:
+    sys.exit(0)
+d.pop("new_password", None)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p) or ".")
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f)
+os.replace(tmp, p)
+PY
+    IDENT_NEW_PASSWORD=""
   fi
 
   state_meta "$PI_NAME" "$DOMAIN"   # name the minion on the live dashboard
