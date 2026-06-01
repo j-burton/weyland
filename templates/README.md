@@ -301,6 +301,16 @@ see." A direct pane read (`tmux_capture_pane`) is the only reliable
 end-of-session check: confirm CC finished, surface anything it's waiting on,
 and pick up any parked questions before you close out.
 
+### Standing rule: check the pane PERIODICALLY during a long task
+
+On any task expected to take more than 5–10 minutes, **check the CC pane
+periodically — not only when a wake ping arrives.** Watch especially for
+context-usage warnings (97%+): the moment you see one, **interrupt CC and have
+it commit immediately**, before context is exhausted and uncommitted work is
+lost. Pings fire only when CC explicitly asks for attention; a CC that is
+quietly grinding (or about to blow its context) won't ping, so periodic
+`tmux_capture_pane` reads are the only way to catch it in time.
+
 ### Standing rule: keep docs in sync, proactively
 
 When you change how this Pi (or the fleet) works — a service, a config, a

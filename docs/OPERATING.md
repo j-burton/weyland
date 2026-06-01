@@ -86,6 +86,15 @@ be missed or suppressed (`wake-mode=off`, a watcher hiccup, debounce, or you
 simply didn't act on the PC shots), so never treat "no ping" as "nothing to
 see." A direct pane read is the only reliable end-of-session check.
 
+## During a long task — check the pane periodically, not just on pings
+
+On any task expected to take more than 5–10 minutes, **check the CC pane
+periodically — not just when a ping arrives.** Watch especially for context-usage
+warnings (97%+): when you see one, **interrupt CC immediately and have it commit**
+before context is exhausted and uncommitted work is lost. Pings only fire when CC
+*asks* for attention; a CC that is quietly grinding (or about to blow its context)
+won't ping, so a periodic pane read is the only way to catch it in time.
+
 ## The vault — fleet secrets
 
 Fleet-wide secrets (the Pushcut webhook, etc.) live in the private
