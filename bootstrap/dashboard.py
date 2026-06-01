@@ -258,7 +258,7 @@ def write_identity(form) -> bool:
     # paste/upload with a trailing newline stays one line (the bash side reads
     # this positionally). The password is taken verbatim (spaces may matter).
     mode = (form.get("ssh_mode", ["none"])[0] or "none").strip()
-    if mode not in ("none", "existing", "generate"):
+    if mode not in ("none", "existing"):
         mode = "none"
     pub_raw = form.get("ssh_pub_key", [""])[0] or ""
     ssh_pub_key = next((ln.strip() for ln in pub_raw.splitlines() if ln.strip()), "")
@@ -553,20 +553,24 @@ HTML = r"""<!doctype html>
     background-image:radial-gradient(120% 80% at 50% -12%, #3a4656, transparent 60%),radial-gradient(100% 60% at 50% 118%, #2a333f, transparent 62%),linear-gradient(180deg,#2a323d,#1e242c); background-attachment:fixed;}
   body::before{content:""; position:fixed; inset:0; z-index:60; pointer-events:none; background-image:var(--grain); background-size:150px 150px; opacity:.05; mix-blend-mode:overlay}
   body::after{content:""; position:fixed; left:0; right:0; bottom:0; height:30vh; z-index:1; pointer-events:none; background:linear-gradient(to top,#e8750a16,transparent); filter:blur(3px)}
-  .app{position:relative; z-index:2; height:100dvh; display:flex; flex-direction:column; max-width:720px; margin:0 auto; padding:10px 16px 16px}
+  .app{position:relative; z-index:2; height:100dvh; display:flex; flex-direction:column; max-width:720px; margin:0 auto; padding:6px 14px 8px}
   body.details-open{overflow:auto} body.details-open .app{height:auto; min-height:100dvh}
   .topbar{display:flex; align-items:center; justify-content:flex-start; gap:10px; flex:0 0 auto}
   .sigil{font-family:var(--mono); font-size:10.5px; letter-spacing:.24em; color:var(--flame); opacity:.9}
   .sigil b{color:var(--ink); opacity:.65}
-  .hero{flex:0 0 auto; text-align:center; padding:8px 0 4px}
+  .hero{flex:0 0 auto; text-align:center; padding:5px 0 2px}
+  body[data-state="identity"] .eyebrow{font-size:8.5px; letter-spacing:.18em; margin:0 0 3px; opacity:.7}
+  body[data-state="identity"] .plate{padding:2px 14px}
+  body[data-state="identity"] .name{font-size:clamp(14px,3vw,17px)}
+  body[data-state="identity"] .subtitle{display:none}
   /* eyebrow — Cinzel 400, widely spaced, with a subtle 1-2px raise */
   .eyebrow{margin:0 0 7px; font-family:var(--cinzel); font-weight:400; font-size:11px; letter-spacing:.34em; text-transform:uppercase; color:var(--flame); text-shadow:0 1px 0 #7a3c08,0 2px 2px rgba(0,0,0,.45)}
   body[data-state="complete"] .eyebrow{color:var(--gold); text-shadow:0 1px 0 #6e5212,0 2px 2px rgba(0,0,0,.45)}
-  .plate{display:inline-block; max-width:100%; padding:10px 24px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
+  .plate{display:inline-block; max-width:100%; padding:7px 22px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
   /* hero Pi name — hot iron letters STAMPED into cold steel: Cinzel 700, a
      parchment->ember gradient fill, and a layered text-shadow that raises the
      glyphs 3-4px off the plate. */
-  .name{margin:0; font-family:var(--cinzel); font-weight:700; letter-spacing:.1em; line-height:1.05; font-size:clamp(22px,6.2vw,40px); word-break:break-word; color:#f3b06a; text-shadow:0 1px 0 #ff9040,0 2px 0 #c45a08,0 3px 0 #8a3a05,0 4px 0 #5a2503,0 5px 8px rgba(0,0,0,.6),0 0 26px #e8750a44}
+  .name{margin:0; font-family:var(--cinzel); font-weight:700; letter-spacing:.1em; line-height:1.05; font-size:clamp(20px,5.2vw,32px); word-break:break-word; color:#f3b06a; text-shadow:0 1px 0 #ff9040,0 2px 0 #c45a08,0 3px 0 #8a3a05,0 4px 0 #5a2503,0 5px 8px rgba(0,0,0,.6),0 0 26px #e8750a44}
   @supports ((-webkit-background-clip:text) or (background-clip:text)){
     .name{background:linear-gradient(180deg,#fff3e0 2%,#ff8c1a 50%,#c45a08 94%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent}
     body[data-state="complete"] .name{background:linear-gradient(180deg,#fff6dd 2%,#d4a017 55%,#a07a10 96%); -webkit-background-clip:text; background-clip:text}
@@ -576,11 +580,11 @@ HTML = r"""<!doctype html>
   .glyph{font-style:normal; display:inline-block; margin-right:9px; color:var(--flame); text-shadow:0 0 12px var(--flame); animation:emberpulse 2.1s ease-in-out infinite}
   body[data-state="complete"] .glyph{color:var(--gold); text-shadow:0 0 12px var(--gold)}
   @keyframes emberpulse{0%,100%{opacity:1; text-shadow:0 0 14px var(--flame)}50%{opacity:.45; text-shadow:0 0 5px var(--flame)}}
-  .stage{flex:1 1 0; min-height:0; overflow-y:auto; overflow-x:hidden; margin-top:8px}
-  .forge-form{border:1px solid var(--line2); border-radius:12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:14px; position:relative; overflow:hidden}
+  .stage{flex:1 1 0; min-height:0; overflow-y:auto; overflow-x:hidden; margin-top:4px}
+  .forge-form{border:1px solid var(--line2); border-radius:12px; background:linear-gradient(180deg,var(--steel2),var(--steel)); padding:12px; position:relative; overflow:hidden}
   .forge-form::after{content:""; position:absolute; inset:0; background-image:var(--grain); background-size:150px 150px; opacity:.05; mix-blend-mode:overlay; pointer-events:none}
-  .forge-form h3{margin:0 0 3px; font-family:var(--cinzel); font-weight:700; font-size:16px; letter-spacing:.05em; text-transform:uppercase; color:var(--flame-bright); text-shadow:0 1px 0 #7a3c08,0 0 16px #e8750a44}
-  .forge-form .lead{margin:0 0 9px; font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather)}
+  .forge-form h3{margin:0 0 2px; font-family:var(--cinzel); font-weight:700; font-size:14px; letter-spacing:.05em; text-transform:uppercase; color:var(--flame-bright); text-shadow:0 1px 0 #7a3c08,0 0 16px #e8750a44}
+  .forge-form .lead{margin:0 0 5px; font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather)}
   .frow{margin:7px 0; position:relative; z-index:1}
   .frow label{display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 4px}
   .frow label .opt{color:var(--steelblue); letter-spacing:.1em}
@@ -593,22 +597,24 @@ HTML = r"""<!doctype html>
   .pair{display:grid; grid-template-columns:1fr 1fr; gap:9px} @media (max-width:340px){.pair{grid-template-columns:1fr}}
   .fmsg{font-family:var(--mono); font-size:11px; letter-spacing:.08em; margin:10px 0 0; min-height:14px; color:#e88}
   /* SSH access section (skip / use existing / generate) */
-  .ssh-sec>label{display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+  .ssh-sec>label{display:block; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 3px}
   .ssh-opts{display:flex; flex-direction:column; gap:5px}
-  .ssh-opt{display:flex; align-items:baseline; gap:9px; font-family:var(--serif); font-size:13.5px; color:var(--ink); cursor:pointer; padding:5px 11px; border:1px solid var(--line2); border-radius:9px; background:#1a212a}
+  .ssh-opt{display:flex; align-items:baseline; gap:9px; font-family:var(--serif); font-size:13.5px; color:var(--ink); cursor:pointer; padding:3px 10px; border:1px solid var(--line2); border-radius:9px; background:#1a212a}
   .ssh-opt:hover{border-color:var(--flame)}
   .ssh-opt input{accent-color:var(--flame); margin:0}
   .ssh-opt b{font-weight:700}
   .ssh-od{font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--leather); margin-left:auto}
-  .ssh-panel{margin-top:11px; padding:13px; border:1px solid var(--line2); border-radius:10px; background:linear-gradient(180deg,var(--steel2),var(--steel))}
+  .ssh-panel{margin-top:10px; padding:11px; border:1px solid var(--line2); border-radius:10px; background:linear-gradient(180deg,var(--steel2),var(--steel))}
   /* per-OS command label above each click-to-copy command box */
-  .cmd-os{font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:9px 0 4px}
-  .copybox .val.cmd{font-size:12px}
+  .cmd-os{display:flex; align-items:baseline; gap:8px; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:7px 0 4px}
+  .osswap{background:none; border:0; color:var(--flame-bright); font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; padding:0; text-decoration:underline}
+  .copybox .val.cmd{font-size:10.5px; line-height:1.3; padding:7px 9px}
+  #begin{padding:12px 16px}
   .btn-ghost{-webkit-appearance:none; appearance:none; cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:var(--flame-bright); background:#11161c; border:1px solid var(--flame); border-radius:9px; padding:11px 15px; text-align:center}
   .btn-ghost:hover{background:#1c1206} .btn-ghost:active{transform:translateY(1px)} .btn-ghost[disabled]{opacity:.5; cursor:default}
   .btn-ghost.dl{display:inline-flex; flex-direction:column; gap:2px; min-width:170px}
   .dlsub{font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--leather)}
-  .ssh-hint{font-family:var(--serif); font-style:italic; font-size:12.5px; color:var(--leather); margin:11px 0 7px}
+  .ssh-hint{font-family:var(--serif); font-style:italic; font-size:12px; color:var(--leather); margin:7px 0 6px}
   .ssh-note{font-family:var(--mono); font-size:10px; letter-spacing:.03em; color:var(--leather); margin:5px 0 0}
   .chips{display:flex; flex-wrap:wrap; gap:7px}
   .chip{font-family:var(--mono); font-size:10.5px; color:var(--ink); background:#11161c; border:1px dashed var(--line); border-radius:7px; padding:6px 9px; cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -791,55 +797,20 @@ HTML = r"""<!doctype html>
           <label>SSH access <span class="opt">&middot; optional &middot; password login stays enabled either way</span></label>
           <div class="ssh-opts">
             <label class="ssh-opt"><input type="radio" name="sshmode" value="none" checked> <b>Skip</b> <span class="ssh-od">no SSH changes</span></label>
-            <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Use existing key</b> <span class="ssh-od">paste your public key</span></label>
-            <label class="ssh-opt"><input type="radio" name="sshmode" value="generate"> <b>Generate new key</b> <span class="ssh-od">made in your browser</span></label>
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Add a key</b> <span class="ssh-od">one command, then paste</span></label>
           </div>
 
           <div class="ssh-panel" id="ssh-existing" style="display:none">
             <p class="ssh-hint">run this in your terminal to print your public key &mdash; it makes one if you don't have it yet &mdash; then paste the output below:</p>
-            <div class="cmd-os">macOS / Linux</div>
-            <div class="copybox"><code class="val cmd" id="ssh-cmd-nix">cat ~/.ssh/id_ed25519.pub 2>/dev/null || { ssh-keygen -t ed25519 -C "$USER@$(hostname)" -N "" -f ~/.ssh/id_ed25519 -q &amp;&amp; cat ~/.ssh/id_ed25519.pub; }</code><button class="copy" data-copy="ssh-cmd-nix" type="button">Copy</button></div>
-            <div class="cmd-os">Windows PowerShell</div>
-            <div class="copybox"><code class="val cmd" id="ssh-cmd-win">if(Test-Path "$env:USERPROFILE\.ssh\id_ed25519.pub"){Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"}else{ssh-keygen -t ed25519 -C "$env:USERNAME@$env:COMPUTERNAME" -N '""' -f "$env:USERPROFILE\.ssh\id_ed25519";Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"}</code><button class="copy" data-copy="ssh-cmd-win" type="button">Copy</button></div>
-            <div class="frow" style="margin-top:11px"><label for="ssh-paste">Paste the public key</label>
-              <textarea id="ssh-paste" rows="3" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
+            <div class="cmd-os"><span id="ssh-os-label">macOS / Linux</span><button type="button" class="osswap" id="ssh-os-swap">on Windows?</button></div>
+            <div class="copybox" id="ssh-box-nix"><code class="val cmd" id="ssh-cmd-nix">cat ~/.ssh/id_ed25519.pub 2>/dev/null || { ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q &amp;&amp; cat ~/.ssh/id_ed25519.pub; }</code><button class="copy" data-copy="ssh-cmd-nix" type="button">Copy</button></div>
+            
+            <div class="copybox" id="ssh-box-win" style="display:none"><code class="val cmd" id="ssh-cmd-win">if(!(Test-Path $HOME\.ssh\id_ed25519.pub)){ssh-keygen -t ed25519 -f $HOME\.ssh\id_ed25519 -N '""'}; type $HOME\.ssh\id_ed25519.pub</code><button class="copy" data-copy="ssh-cmd-win" type="button">Copy</button></div>
+            <div class="frow" style="margin-top:7px"><label for="ssh-paste">Paste the public key</label>
+              <textarea id="ssh-paste" rows="2" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
             <p class="ssh-status" id="ssh-existing-status"></p>
           </div>
 
-          <div class="ssh-panel" id="ssh-generate" style="display:none">
-            <button class="btn-ghost" type="button" id="ssh-gen">&#9881; Generate key</button>
-            <div id="ssh-gen-result" style="display:none">
-              <p class="ssh-warn">&#9888; Save these keys now &mdash; you will not see them again.</p>
-              <div class="dlrow">
-                <button class="btn-ghost dl" type="button" id="dl-openssh">&#8595; id_ed25519 <span class="dlsub">Mac / PowerShell</span></button>
-              </div>
-              <div class="dl-after" id="after-openssh" style="display:none">
-                <p class="ssh-hint">saved to your Downloads &mdash; now move it to your SSH folder (click a path to copy):</p>
-                <div class="chips">
-                  <button class="chip" type="button" data-copy-text="~/.ssh/id_ed25519">Mac: ~/.ssh/id_ed25519</button>
-                  <button class="chip" type="button" data-copy-text="%USERPROFILE%\.ssh">Windows: %USERPROFILE%\.ssh\id_ed25519</button>
-                </div>
-                <p class="ssh-note">In Explorer, replace %USERPROFILE% with your actual username</p>
-              </div>
-              <div class="dlrow">
-                <button class="btn-ghost dl" type="button" id="dl-ppk">&#8595; id_ed25519.ppk <span class="dlsub">PuTTY (no PuTTYgen)</span></button>
-              </div>
-              <div class="dl-after" id="after-ppk" style="display:none">
-                <p class="ssh-hint">saved to your Downloads &mdash; keep it anywhere, just remember where (PuTTY browses to it when you connect).</p>
-              </div>
-              <div class="howto">
-                <div class="tabs">
-                  <button class="tab" type="button" data-tab="mac" aria-pressed="true">Mac</button>
-                  <button class="tab" type="button" data-tab="win" aria-pressed="false">Windows</button>
-                  <button class="tab" type="button" data-tab="putty" aria-pressed="false">PuTTY</button>
-                </div>
-                <div class="tabpane" data-pane="mac"><code>ssh admin@<span class="howto-name">minion</span>.local</code><p>save <b>id_ed25519</b> to <code>~/.ssh/</code> &mdash; it's picked up automatically.</p></div>
-                <div class="tabpane" data-pane="win" style="display:none"><code>ssh admin@<span class="howto-name">minion</span>.local</code><p>save <b>id_ed25519</b> to <code>%USERPROFILE%\.ssh\</code> &mdash; PowerShell uses it automatically.</p></div>
-                <div class="tabpane" data-pane="putty" style="display:none"><p>PuTTY &rarr; Connection &rarr; SSH &rarr; Auth &rarr; <i>browse to the .ppk file</i>. Host: <code>admin@<span class="howto-name">minion</span>.local</code></p></div>
-              </div>
-            </div>
-            <p class="ssh-status" id="ssh-gen-status"></p>
-          </div>
         </div>
         <button class="btn btn-fire btn-block" type="button" id="begin">SUBJUGATE &rarr;</button>
         <p class="fmsg" id="fmsg3"></p>
@@ -1083,7 +1054,6 @@ HTML = r"""<!doctype html>
     var pw=$("i-pw").value, pw2=$("i-pw2").value;
     if(pw && pw!==pw2){ showFormPage(2); var m2=$("fmsg2"); m2.style.color="#e88"; m2.textContent="the passwords do not match, my Lord"; return; }
     if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="paste your public key first, my Lord"; return; }
-    if(sshMode==="generate" && !sshPubKey){ m.style.color="#e88"; m.textContent="generate a key first — and save both downloads"; return; }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
     var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
     fetch("/identity?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
@@ -1247,11 +1217,17 @@ HTML = r"""<!doctype html>
   function setSshMode(mode){
     sshMode=mode;
     $("ssh-existing").style.display = mode==="existing"?"":"none";
-    $("ssh-generate").style.display = mode==="generate"?"":"none";
     if(mode==="none") sshPubKey="";          // existing/generate keep whatever was loaded
-    else if(mode==="existing") validatePaste();   // re-derive from the paste box
+    else if(mode==="existing"){ sshInitOS(); validatePaste(); }   // re-derive from the paste box
   }
   document.querySelectorAll('input[name="sshmode"]').forEach(function(r){ r.addEventListener("change", function(){ if(this.checked) setSshMode(this.value); }); });
+  // SSH command: show only the visitor's own OS by default; small toggle for the other.
+  var sshOS = /win/i.test((navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent) ? "win" : "nix";
+  function sshShowOS(os){ sshOS=os; var w=os==="win"; var bn=$("ssh-box-nix"),bw=$("ssh-box-win"),lb=$("ssh-os-label"),sw=$("ssh-os-swap");
+    if(bn) bn.style.display=w?"none":""; if(bw) bw.style.display=w?"":"none";
+    if(lb) lb.textContent=w?"Windows PowerShell":"macOS / Linux"; if(sw) sw.textContent=w?"on Mac / Linux?":"on Windows?"; }
+  function sshInitOS(){ sshShowOS(sshOS); }
+  (function(){ var sw=$("ssh-os-swap"); if(sw) sw.addEventListener("click", function(){ sshShowOS(sshOS==="win"?"nix":"win"); }); sshInitOS(); })();
   // Paste-box import: take the first non-empty line (a public key is one line),
   // validate it, and stash it in sshPubKey. The private key never touches the
   // page. Re-validated on switch back to "existing" so a stale paste can't pass.
@@ -1263,26 +1239,6 @@ HTML = r"""<!doctype html>
     else { sshPubKey=""; st.className="ssh-status err"; st.textContent="that isn't an SSH public key — paste the line starting ssh-ed25519 / ssh-rsa / ecdsa-…"; }
   }
   $("ssh-paste").addEventListener("input", validatePaste);
-  $("ssh-gen").addEventListener("click", function(){
-    var st=$("ssh-gen-status"), btn=this;
-    if(typeof nacl==="undefined"||!nacl.sign){ st.className="ssh-status err"; st.textContent="the key generator didn't load — use 'Use existing key' instead"; return; }
-    btn.disabled=true; st.className="ssh-status"; st.textContent="forging a key in your browser…";
-    try{
-      var nm=$("i-name").value.trim().toLowerCase()||"minion";
-      var kp=generateKeypair("weyland@"+nm);
-      sshPubKey=kp.pubLine; genPriv=kp.privOpenssh; genPpk=kp.ppk;
-      setHowtoName(nm); $("ssh-gen-result").style.display="";
-      $("after-openssh").style.display="none"; $("after-ppk").style.display="none";   // fresh keys: re-download
-      st.className="ssh-status ok"; st.textContent="key forged — save BOTH files below, then begin the rite";
-      btn.textContent="↻ Regenerate";
-    }catch(e){ st.className="ssh-status err"; st.textContent="couldn't generate a key in this browser — use 'Use existing key'"; }
-    btn.disabled=false;
-  });
-  // showSaveFilePicker isn't available over plain HTTP (non-secure context), so
-  // the download lands in Downloads. Reveal a "now move it here" instruction with
-  // the destination path as copy chips the moment the download fires.
-  $("dl-openssh").addEventListener("click", function(){ if(genPriv){ saveFile("id_ed25519", genPriv); $("after-openssh").style.display=""; } });
-  $("dl-ppk").addEventListener("click", function(){ if(genPpk){ saveFile("id_ed25519.ppk", genPpk); $("after-ppk").style.display=""; } });
   document.querySelectorAll(".howto .tab").forEach(function(t){ t.addEventListener("click", function(){
     var tab=this.getAttribute("data-tab");
     document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
