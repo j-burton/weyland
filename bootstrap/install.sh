@@ -200,6 +200,14 @@ state_action_clear() { _state_op action_clear; }
 state_result_set()   { _state_op result_set "$1" "${2:-}"; }
 state_ready()        { _state_op ready; }
 
+# Overall cap on an interactive browser-login step (tailscale / gh / cloudflared
+# / claude). The run_dance watcher loops ~1800s only to SURFACE the auth URL; the
+# auth command itself had no timeout, so an operator who never finishes the
+# browser step would block the phase — and the whole bootstrap — forever (the
+# live symptom: a stage stuck "running" with no end). On expiry the phase fails
+# loud instead. Override via WEYLAND_LOGIN_TIMEOUT.
+RUN_DANCE_TIMEOUT="${WEYLAND_LOGIN_TIMEOUT:-900}"   # 15 min
+
 # ----------------------------------------------------------------------
 # run_dance — wrap an interactive auth command for the live dashboard
 # ----------------------------------------------------------------------
@@ -243,6 +251,9 @@ run_dance() {
   local watcher=$!
 
   local rc=0
+  # timeout caps the WHOLE login: SIGTERM at $cap, SIGKILL 10s later if it clings
+  # (an unfinished `cloudflared tunnel login` etc. ignores TERM). 124 = timed out.
+  local cap="${RUN_DANCE_TIMEOUT:-900}"
   if command -v script >/dev/null 2>&1; then
     # util-linux script: pty-backed, records to logf, -e returns child's status.
     # -f (--flush) is CRITICAL: without it `script` buffers its typescript file
@@ -251,9 +262,9 @@ run_dance() {
     # the watcher never captures the URL (the live "empty Tailscale button" bug,
     # reproduced on inkypi). -f flushes after every write so the URL lands in the
     # log within a poll and the dashboard button gets its href.
-    script -qfec "$cmd" "$logf" || rc=$?
+    timeout -k 10 "$cap" script -qfec "$cmd" "$logf" || rc=$?
   else
-    bash -c "$cmd" 2>&1 | tee "$logf" || true
+    timeout -k 10 "$cap" bash -c "$cmd" 2>&1 | tee "$logf" || true
     rc=${PIPESTATUS[0]}
   fi
 
@@ -264,6 +275,11 @@ run_dance() {
     state_phase "$phase" done
   else
     state_phase "$phase" error
+    # 124 (TERM at $cap) / 137 (KILL after -k): the operator never finished the
+    # browser step. Say so plainly so the dashboard's red stall message is useful.
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      warn "${provider} login not completed in time (${cap}s) — re-run the bootstrap to retry"
+    fi
   fi
   return "$rc"
 }
