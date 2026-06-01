@@ -1102,8 +1102,11 @@ EOF
     # interactive TTY ("Input must be provided either through stdin or as a
     # prompt argument when using --print"). CC keeps its own logs; the tmux
     # session is the live view.
+    # Launch via a LOGIN shell (bash -lc) so ~/.profile puts ~/.local/bin — where
+    # the claude installer drops the binary — on PATH. A bare command would run on
+    # tmux's minimal non-login PATH and die instantly ("claude: not found").
     tmux new-session -d -s "$PI_NAME" -c "${PI_DIR:-$HOME}" \
-      "claude --dangerously-skip-permissions"
+      "bash -lc 'exec claude --dangerously-skip-permissions'"
     # Note: --dangerously-skip-permissions is the "trust the minion" mode
     # matching the connector's philosophy. The user accepts the risk.
   else
@@ -1130,7 +1133,10 @@ KillMode=process
 User=${USER}
 # Create the CC tmux session only if it isn't already running. A service
 # (re)start must never recreate — and so never clobber — a live session.
-ExecStart=/bin/sh -c '/usr/bin/tmux has-session -t ${PI_NAME} 2>/dev/null || /usr/bin/tmux new-session -d -s ${PI_NAME} -c "${PI_DIR:-$HOME}" "claude --dangerously-skip-permissions"'
+# Recreate via a LOGIN shell (bash -lc) so ~/.profile adds ~/.local/bin to PATH;
+# the bare "claude" ran on /bin/sh's minimal PATH, died instantly, and the tmux
+# server exited — so this unit could never actually restart CC after a crash.
+ExecStart=/bin/sh -c '/usr/bin/tmux has-session -t ${PI_NAME} 2>/dev/null || /usr/bin/tmux new-session -d -s ${PI_NAME} -c "${PI_DIR:-$HOME}" "bash -lc '\''exec claude --dangerously-skip-permissions'\''"'
 # No ExecStop: stopping or restarting this service must NOT kill the tmux
 # session — that would terminate the running Claude Code. The session is
 # long-lived and intentionally outlives the service.
