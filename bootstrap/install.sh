@@ -848,6 +848,7 @@ phase_github_auth() {
     current_user="$(gh api user --jq .login 2>/dev/null || true)"
     if [ "$current_user" = "$OWNER" ]; then
       log "gh already authed as ${OWNER}"
+      gh auth setup-git --hostname github.com >/dev/null 2>&1 || gh auth setup-git >/dev/null 2>&1 || warn "gh auth setup-git failed; git may prompt on clone/push"
       return 0
     fi
     warn "gh is authed as '${current_user:-?}', expected '${OWNER}'. Re-authing."
@@ -883,7 +884,11 @@ EOF
   if [ "$current_user" != "$OWNER" ]; then
     die "gh authed as '${current_user}', not '${OWNER}'. Re-run after fixing."
   fi
-  log "gh authed as ${OWNER}"
+  # Wire git itself to gh's token so clones/pushes of PRIVATE repos (the per-Pi
+  # repo here, and CC's pushes later) authenticate with no prompt. Without this,
+  # git asks for a username and — with no terminal — the clone hangs forever.
+  gh auth setup-git --hostname github.com >/dev/null 2>&1 || gh auth setup-git >/dev/null 2>&1 || warn "gh auth setup-git failed; git may prompt on clone/push"
+  log "gh authed as ${OWNER}; git wired to gh credentials"
 }
 
 # ----------------------------------------------------------------------
@@ -911,12 +916,18 @@ phase_per_pi_repo() {
       --disable-issues
   fi
 
+  # Make sure git can authenticate to GitHub before any clone/push below (and
+  # for CC's pushes later). Run every time — covers a resumed run where the
+  # GitHub-auth phase was already 'done' and thus skipped.
+  gh auth setup-git --hostname github.com >/dev/null 2>&1 || gh auth setup-git >/dev/null 2>&1 || true
+
   # Clone or pull into /opt/<pi-name>-pi.
   sudo mkdir -p "$(dirname "$local_dir")"
   if [ ! -d "$local_dir/.git" ]; then
     log "cloning ${repo_slug} to ${local_dir}"
     sudo chown "$(id -u):$(id -g)" "$(dirname "$local_dir")" || true
-    gh repo clone "$repo_slug" "$local_dir"
+    GIT_TERMINAL_PROMPT=0 timeout 120 gh repo clone "$repo_slug" "$local_dir" \
+      || die "clone of ${repo_slug} failed or timed out — is git authenticated? (gh auth setup-git)"
   else
     log "${local_dir} already cloned; pulling latest"
     if ! GIT_TERMINAL_PROMPT=0 timeout 30 git -C "$local_dir" pull --ff-only 2>&1; then
@@ -960,8 +971,8 @@ phase_per_pi_repo() {
       -c user.email="${USER}@${PI_NAME}.local" \
       commit -m "chore: initial per-Pi state seeded by weyland" \
       || warn "nothing to commit (empty seed?)"
-    git -C "$local_dir" push -u origin "$(git -C "$local_dir" rev-parse --abbrev-ref HEAD)" \
-      || warn "push failed; check connectivity"
+    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$local_dir" push -u origin "$(git -C "$local_dir" rev-parse --abbrev-ref HEAD)" \
+      || warn "push failed or timed out; check connectivity"
   else
     log "${local_dir} not empty; leaving contents as-is"
   fi
