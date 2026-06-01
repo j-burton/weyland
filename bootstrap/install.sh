@@ -990,11 +990,18 @@ EOF
   save_state TUNNEL_ID "$tunnel_id"
 
   # Step 3: write config.yml routing $DOMAIN -> localhost:5002 (MCP).
+  # Re-run safety: a freshly created tunnel drops its creds in ~/.cloudflared,
+  # but on a re-run that file may be gone (already moved to /etc/cloudflared, or
+  # $HOME cleaned) while the tunnel still exists. Prefer the home copy; fall back
+  # to the already-installed one; only die if neither is present.
   local creds_file="$HOME/.cloudflared/${tunnel_id}.json"
-  if [ ! -f "$creds_file" ]; then
-    die "tunnel credentials file missing at ${creds_file}"
+  if [ -f "$creds_file" ]; then
+    sudo cp "$creds_file" "${tunnel_dir}/${tunnel_id}.json"
+  elif [ -f "${tunnel_dir}/${tunnel_id}.json" ]; then
+    log "tunnel creds already installed at ${tunnel_dir}/${tunnel_id}.json; reusing"
+  else
+    die "tunnel credentials file missing (looked in ${creds_file} and ${tunnel_dir}); delete the tunnel in Cloudflare and re-run to recreate it"
   fi
-  sudo cp "$creds_file" "${tunnel_dir}/${tunnel_id}.json"
   sudo chmod 0640 "${tunnel_dir}/${tunnel_id}.json"
 
   sudo tee "$config_file" >/dev/null <<EOF
@@ -1130,10 +1137,14 @@ EOF
   fi
 
   # Step 4: arrange for the tmux session to survive reboot.
+  # Written every run (not just when absent) so an existing Pi picks up unit
+  # fixes — e.g. the bash -lc PATH fix — on a re-run. Safe to rewrite + reload
+  # live: the unit is oneshot + RemainAfterExit with KillMode=process and no
+  # ExecStop, so this never touches the running tmux session/CC (and we
+  # deliberately don't restart it here).
   local restart_unit="/etc/systemd/system/weyland-cc.service"
-  if [ ! -f "$restart_unit" ]; then
-    log "installing weyland-cc.service to restart tmux session on boot"
-    sudo tee "$restart_unit" >/dev/null <<EOF
+  log "writing weyland-cc.service (recreates the CC tmux session on boot)"
+  sudo tee "$restart_unit" >/dev/null <<EOF
 [Unit]
 Description=Weyland Claude Code tmux session (${PI_NAME})
 After=network-online.target
@@ -1162,9 +1173,8 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    sudo systemctl daemon-reload
-    sudo systemctl enable weyland-cc.service
-  fi
+  sudo systemctl daemon-reload
+  sudo systemctl enable weyland-cc.service
 
   # Step 5: install the wake system (Notification hook + tmux watcher).
   local weyland_dir
