@@ -40,6 +40,9 @@ IDENTITY_FILE = os.path.join(STATE_DIR, "identity.json")
 ENV_FILE = os.environ.get("WEYLAND_ENV_FILE", "/etc/weyland/weyland.env")
 PORT = int(os.environ.get("WEYLAND_DASH_PORT", "8080"))
 IDLE_TIMEOUT = 900  # 15 minutes
+# Stall watchdog: a phase whose running log has been quiet longer than this is
+# surfaced as `stalled` (server-side, derived on read — see state_with_flags).
+STALL_HARD_CAP = 120  # seconds
 
 PAT_RE = re.compile(r"^(github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9]+)$")
 NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
@@ -154,43 +157,67 @@ def _progress_text(lines):
     return None
 
 
-def _active_progress(s):
-    """{'text', 'pct'} for the running phase, or None. Reads the per-phase log
-    if present (run_dance writes <phase>.log), else the global bootstrap.log."""
-    running = None
+def _running_phase(s):
+    """The first phase whose status is `running`, or None."""
     for p in (s.get("phases") or []):
         if p.get("status") == "running":
-            running = p.get("name")
-            break
-    if not running:
-        return None
-    logf = os.path.join(STATE_DIR, running + ".log")
+            return p
+    return None
+
+
+def _phase_logfile(name):
+    """The log read for live progress: the per-phase log (run_dance writes
+    <phase>.log) when it has content, else the global bootstrap.log."""
+    logf = os.path.join(STATE_DIR, name + ".log")
     if not (os.path.exists(logf) and os.path.getsize(logf) > 0):
         logf = os.path.join(STATE_DIR, "bootstrap.log")
-    tail = _read_log_tail(logf)
-    if not tail:
+    return logf
+
+
+def _active_progress(s):
+    """{'text', 'pct', 'ts'} for the running phase, or None when none is running.
+
+    `ts` is the running log's mtime (epoch secs) — the moment the running tool
+    last emitted, i.e. the activity clock the client uses for stall detection.
+    `text` may be None (running but no recognised tool signal yet); `ts` is still
+    returned so the UI can still compute quiet time."""
+    p = _running_phase(s)
+    if not p:
         return None
-    lines = tail.splitlines()
-    text = _progress_text(lines)
-    if text is None:
-        last = ""
-        for ln in reversed(lines):
-            if ln.strip():
-                last = ln.strip()
-                break
-        if not last:
-            return None
-        text = running + ": " + last[:60]
-    return {"text": text, "pct": _progress_pct(lines)}
+    logf = _phase_logfile(p.get("name"))
+    try:
+        ts = int(os.path.getmtime(logf))
+    except OSError:
+        ts = None
+    text = None
+    pct = None
+    tail = _read_log_tail(logf)
+    if tail:
+        lines = tail.splitlines()
+        text = _progress_text(lines)
+        pct = _progress_pct(lines)
+        if text is None:
+            for ln in reversed(lines):
+                if ln.strip():
+                    text = p.get("name") + ": " + ln.strip()[:60]
+                    break
+    return {"text": text, "pct": pct, "ts": ts}
 
 
 def state_with_flags() -> bytes:
-    """state.json verbatim, plus identity_submitted, this Pi's hostname, and a
-    live `progress` line for the running phase.
+    """state.json verbatim, plus identity_submitted, this Pi's hostname, a
+    server clock `now`, and a live `progress` line for the running phase.
 
     hostname lets the browser pre-fill the name field on a fresh/started-over Pi.
-    progress is a per-request debug line (never written back to state.json, so
-    the bash side stays the single writer). None when no phase is running.
+    `now` (server epoch) lets the client compute elapsed/quiet time without clock
+    skew. progress is a per-request debug line (never written back to state.json,
+    so the bash side stays the single writer) carrying `ts` (last-activity epoch).
+
+    Stall watchdog: if the running phase has been quiet past STALL_HARD_CAP we
+    flip its status to `stalled` IN THE EMITTED COPY ONLY (state.json on disk is
+    untouched — bash remains the sole writer). Deriving it on read means any
+    polling client sees it, even one that reconnects after the browser was
+    closed; and it self-clears the instant the tool emits again.
     """
     try:
         with open(STATE_FILE) as f:
@@ -200,10 +227,23 @@ def state_with_flags() -> bytes:
     s["identity_submitted"] = os.path.exists(IDENTITY_FILE)
     host = (socket.gethostname() or "").strip().lower()
     s["hostname"] = host if _valid_name(host) else ""
+    now = int(time.time())
+    s["now"] = now
     try:
-        s["progress"] = _active_progress(s)
+        prog = _active_progress(s)
     except Exception:
-        s["progress"] = None
+        prog = None
+    s["progress"] = prog
+    try:
+        p = _running_phase(s)
+        if p is not None:
+            ref = (prog or {}).get("ts")
+            if ref is None:
+                ref = p.get("started_at") or p.get("updated_at")
+            if ref is not None and now - ref > STALL_HARD_CAP:
+                p["status"] = "stalled"
+    except Exception:
+        pass
     return json.dumps(s).encode("utf-8")
 
 
@@ -586,12 +626,20 @@ HTML = r"""<!doctype html>
   .badge.run{background:#2e1a06; color:var(--flame-bright); border-color:var(--flame); box-shadow:0 0 16px #e8750a66; animation:anvil 1.4s ease-in-out infinite}
   .badge.pend{background:#252d38; color:var(--leather); border-color:#414c5c}
   .badge.error{background:#2a0a0a; color:#ff6f61; border-color:#7a261c}
+  /* stalled — the forge gone cold: ash-blue, no anvil pulse */
+  .badge.stalled{background:#1c2430; color:#9fb6c8; border-color:#46566a}
   @keyframes anvil{0%,100%{box-shadow:0 0 7px #e8750a44}50%{box-shadow:0 0 22px #e8750aaa}}
   .roster .label{flex:1; font-family:var(--cinzel); font-weight:400; font-size:14px; letter-spacing:.01em}
   li.is-pend .label{color:var(--muted)} li.is-done .label{color:var(--ink)} li.is-error .label{color:#ffb3a8}
   li.is-run .label{color:#ffd9a0; text-shadow:0 0 10px #e8750a44}
+  li.is-stalled .label{color:#bcd0e0}
   .stamp{font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; text-align:right}
   li.is-done .stamp{color:var(--gold)} li.is-run .stamp{color:var(--flame-bright)} li.is-pend .stamp{color:var(--leather)} li.is-error .stamp{color:#ff6f61}
+  li.is-stalled .stamp{color:#9fb6c8}
+  /* live stall escalation on the running row: amber "still working", red "stuck" */
+  li.is-warming .stamp{color:var(--gold); text-shadow:0 0 8px #d4a01744}
+  li.is-stuck .stamp{color:#ff6f61; text-shadow:0 0 9px #c0392b55}
+  li.is-stuck .subline,li.is-stalled .subline{color:#ff9c8a}
   /* active phase row: a forge-glow sweep so progress is obvious even with no auth card */
   .roster li.is-run{background:linear-gradient(90deg,#e8750a05,#e8750a22,#e8750a05); background-size:220% 100%; animation:forgesweep 2.6s linear infinite; border-radius:6px}
   @keyframes forgesweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
@@ -873,24 +921,37 @@ HTML = r"""<!doctype html>
   function liveName(){var v=$("i-name").value.trim().toLowerCase(); return v?v.toUpperCase():"";}
   function setName(nm){var e=$("piname"); if(nm){e.textContent=nm; e.classList.remove("unnamed");} else {e.textContent="UNNAMED"; e.classList.add("unnamed");}}
 
-  function renderRoster(phases, progress){
+  function renderRoster(phases, progress, now){
     var by={}; (phases||[]).forEach(function(p){by[p.name]=p.status;});
     var r=$("roster"); r.innerHTML="";
     ORDER.forEach(function(n){
       var m=PH[n]||[n,"done"], st=by[n]||"pending";
-      var cls=st==="done"?"done":st==="running"?"run":st==="error"?"error":"pend";
-      var stamp=st==="done"?m[1]:st==="running"?"the hammer strikes":st==="error"?"the strike falters":"awaits the rite";
+      var cls=st==="done"?"done":st==="running"?"run":st==="error"?"error":st==="stalled"?"stalled":"pend";
+      var stamp=st==="done"?m[1]:st==="running"?"the hammer strikes":st==="error"?"the strike falters":st==="stalled"?"the forge has gone cold":"awaits the rite";
       var li=document.createElement("li"); li.className="is-"+cls;
-      li.innerHTML='<span class="badge '+cls+'"><span>'+(st==="done"?"✦":st==="error"?"!":"")+'</span></span><span class="label"></span><span class="stamp">'+stamp+'</span>';
+      li.innerHTML='<span class="badge '+cls+'"><span>'+(st==="done"?"✦":(st==="error"||st==="stalled")?"!":"")+'</span></span><span class="label"></span><span class="stamp">'+stamp+'</span>';
       li.querySelector(".label").textContent=m[0];
-      // Live DEBUG sub-line: only on the RUNNING row, only when we have progress
-      // text. It vanishes on completion because the row is rebuilt as "done".
-      if(st==="running" && progress && progress.text){
+      // Stall indicator — only the RUNNING row, computed from the last-activity
+      // clock (progress.ts) vs the server `now` (no client clock skew). >25s amber
+      // "still working", >60s red "may be stuck". The server flips to `stalled`
+      // past its own hard cap (~120s) even with no browser; that path renders
+      // below with the cold badge.
+      if(st==="running" && progress && progress.ts && now){
+        var quiet=now-progress.ts;
+        if(quiet>60){ li.classList.add("is-stuck");
+          li.querySelector(".stamp").textContent="may be stuck — "+quiet+"s"; }
+        else if(quiet>25){ li.classList.add("is-warming");
+          li.querySelector(".stamp").textContent="still working… "+quiet+"s"; }
+      }
+      // Live DEBUG sub-line: on the RUNNING row (and a STALLED one, to surface the
+      // last activity), only when we have progress text. It vanishes on completion
+      // because the row is rebuilt as "done".
+      if((st==="running"||st==="stalled") && progress && progress.text){
         var sub=document.createElement("div"); sub.className="subline";
-        var hasPct=(progress.pct!=null && progress.pct>=0);
+        var hasPct=(st==="running" && progress.pct!=null && progress.pct>=0);
         sub.innerHTML = hasPct
           ? '<span class="sub-text"></span><span class="sub-bar"><i></i></span><span class="sub-pct"></span>'
-          : '<span class="sub-text"></span><span class="sub-dots"></span>';
+          : '<span class="sub-text"></span>'+(st==="stalled"?'':'<span class="sub-dots"></span>');
         sub.querySelector(".sub-text").textContent=progress.text;   // textContent: log is untrusted
         if(hasPct){
           var p=Math.max(0,Math.min(100,progress.pct));
@@ -943,7 +1004,7 @@ HTML = r"""<!doctype html>
 
     $("form").style.display = stage==="identity"?"":"none";
     $("roster").style.display = stage==="identity"?"none":"";
-    if(stage!=="identity") renderRoster(s.phases, s.progress);
+    if(stage!=="identity") renderRoster(s.phases, s.progress, s.now);
 
     var a=s.action, ac=$("authcard");
     var authShown = (stage==="binding" && a && a.active);

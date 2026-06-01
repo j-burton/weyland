@@ -135,7 +135,7 @@ STATE_FILE="${STATE_DIR}/state.json"
 
 _state_op() {
   STATE_FILE="$STATE_FILE" python3 - "$@" <<'PY' 2>/dev/null || true
-import json, os, sys, tempfile
+import json, os, sys, tempfile, time
 sf = os.environ["STATE_FILE"]; op = sys.argv[1]; a = sys.argv[2:]
 if op != "init" and not os.path.exists(sf):
     sys.exit(0)  # dashboard not active -> no-op
@@ -164,8 +164,17 @@ elif op == "meta":
     if pi: s["pi_name"] = pi
     if dom: s["domain"] = dom
 elif op == "phase":
+    # Stamp activity timestamps so the dashboard can tell working from stalled:
+    # started_at the first time a phase goes running, updated_at on any change.
+    now = int(time.time())
     for p in s.get("phases", []):
-        if p.get("name") == a[0]: p["status"] = a[1]
+        if p.get("name") == a[0]:
+            new = a[1]
+            if new == "running" and p.get("status") != "running":
+                p["started_at"] = now
+            if p.get("status") != new:
+                p["updated_at"] = now
+            p["status"] = new
 elif op == "action":
     s["action"] = {"provider": a[0],
                    "url": a[1] if len(a) > 1 else "",
@@ -288,6 +297,8 @@ _checklist_body() {
     label="${entry#*:}"
     if printf '%s\n' "$completed" | grep -qx "$name"; then
       marker=$'\033[0;32m✓\033[0m'    # done — green
+    elif [ "$name" = "$current" ] && [ "$current_state" = "stalled" ]; then
+      marker=$'\033[0;33m!\033[0m'    # stalled — amber (forge gone cold)
     elif [ "$name" = "$current" ] && [ "$current_state" = "running" ]; then
       marker=$'\033[0;36m▶\033[0m'    # running — cyan
     else
