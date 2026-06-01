@@ -6,6 +6,7 @@ PORT       := 7777
 WINDOW_TITLE := "Claude"
 
 g_shot     := 1
+g_text     := ""
 
 DllCall("LoadLibrary", "Str", "ws2_32.dll")
 WSADATA := Buffer(512, 0)
@@ -50,6 +51,13 @@ Loop {
                 body := SubStr(req, bodyStart + 4)
                 if RegExMatch(body, '"shot"\s*:\s*(\d+)', &shotMatch) {
                     g_shot := Integer(shotMatch[1])
+                } else {
+                    g_shot := 0  ; non-numeric shot (ctx alert) — message is in text field
+                }
+                if RegExMatch(body, '"text"\s*:\s*"((?:[^"\\]|\\.)*)"', &txtMatch) {
+                    g_text := txtMatch[1]
+                } else {
+                    g_text := ""
                 }
             }
             SetTimer(DoWake, -100)
@@ -89,12 +97,17 @@ DoWake() {
         }
 
         msg := "[HAL 9000 STANDING BY]"
-        switch g_shot {
-            case 1: msg := "[HAL 9000 STANDING BY]"
-            case 2: msg := "Hello, Dave."
-            case 3: msg := "Dave, are you there?"
-            case 4: msg := "CHAT-CLAUDE: if the work is done, fire Julian's status ping and set wake off. If not done, confirm still working."
-            case 5: msg := "Chat-Claude not responding — CC may be stuck"
+        if (g_shot = 0) {
+            ; ctx alert — use the text field which contains full instructions
+            msg := g_text ? g_text : "[ctx alert — no message]"
+        } else {
+            switch g_shot {
+                case 1: msg := "[HAL 9000 STANDING BY]"
+                case 2: msg := "Hello, Dave."
+                case 3: msg := "Dave, are you there?"
+                case 4: msg := "CHAT-CLAUDE: if the work is done, fire Julian's status ping and set wake off. If not done, confirm still working."
+                case 5: msg := "Chat-Claude not responding — CC may be stuck"
+            }
         }
         Sleep 400
         SendText msg
