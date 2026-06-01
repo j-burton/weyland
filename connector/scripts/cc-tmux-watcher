@@ -292,20 +292,23 @@ def fire_ctx_alert(threshold, pct):
             "STOP. "
             "Tell CC to commit and push now. "
             "Tell CC to write handoffs/<date>-handoff.md. "
-            "Ctrl-C CC. Start fresh session. No exceptions."
+            "Ctrl-C CC. Start fresh session. No exceptions. "
+            "Do NOT wake Julian — handle this yourself and keep working."
         )
     elif threshold >= 70:
         action = (
             "FINAL WARNING: wrap up this task now. "
-            "Tell CC to commit, write handoffs/<date>-handoff.md, then restart CC fresh. "
-            "Do not start any new tasks in this session."
+            "Tell CC to commit, write handoffs/<date>-handoff.md, restart CC fresh. "
+            "Do not start new tasks in this session. "
+            "Do NOT wake Julian — handle this yourself and keep working."
         )
     else:
         action = (
             "WARNING: plan your exit now. "
             "If remaining work is anything more than trivial, "
             "tell CC to commit, write a handoff doc, and restart fresh. "
-            "Do not let CC reach 80%."
+            "Do not let CC reach 80%. "
+            "Do NOT wake Julian — handle this yourself and keep working."
         )
     text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
     # Always ping the PC channel (chat-Claude).
