@@ -73,7 +73,7 @@ Loop {
 
 DoWake() {
     static busy := false
-    global WINDOW_TITLE, g_shot
+    global WINDOW_TITLE, g_shot, g_text  # g_text MUST be global here or ctx alerts type the empty-placeholder
     if busy
         return
     busy := true

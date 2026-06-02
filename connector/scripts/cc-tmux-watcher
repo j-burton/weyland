@@ -361,7 +361,7 @@ def fire_ctx_alert(threshold, pct):
             "Do not let CC reach 80%. "
             "Do NOT wake Julian — handle this yourself and keep working."
         )
-    text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) — {action}")
+    text = (f"[{PI_NAME}] CC context at {pct}% (crossed {threshold}%) - {action}")
     # Always ping the PC channel (chat-Claude).
     pc_url = read_kv(WAKE_ENV, "PC_WAKE_URL")
     pc_token = read_kv(WAKE_ENV, "WAKE_TOKEN")
