@@ -1402,9 +1402,16 @@ phase_vault() {
 
   tmp="$(mktemp -d)"
   # Stderr → /dev/null so the PAT embedded in the clone URL never lands in logs.
-  if ! git clone --quiet --depth 1 \
+  # Bounded so a stalled network or a credential prompt can never hang the whole
+  # rite (a silent stall here used to freeze the bootstrap): timeout caps the
+  # wall-clock; GIT_TERMINAL_PROMPT=0 turns a would-be auth prompt into an instant
+  # failure; the low-speed guards abort a socket that opens then goes quiet. Any
+  # of these -> clean "clone failed" -> warn and carry on (the vault is optional).
+  if ! GIT_TERMINAL_PROMPT=0 timeout 90 \
+        git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 \
+        clone --quiet --depth 1 \
         "https://${pat}@github.com/${OWNER}/weyland-secrets.git" "$tmp" 2>/dev/null; then
-    warn "vault unreachable (clone failed) — fleet secrets not fetched; wake inert until present"
+    warn "vault unreachable (clone failed/timed out) — fleet secrets not fetched; wake inert until present"
     rm -rf "$tmp"
     return 0
   fi
