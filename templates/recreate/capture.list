@@ -1,0 +1,7 @@
+# capture.list — per-Pi list of CUSTOM files/dirs for capture.sh to copy into provisioning/
+# Format: one path per line, optional second column = destination name in provisioning/.
+# Lines with #, and blank lines, are ignored. Secret-looking paths are auto-skipped.
+# Examples:
+#   /etc/systemd/system/myapp.service        myapp.service
+#   /home/admin/.config/labwc/rc.xml         labwc-rc.xml
+#   /opt/myapp/config.yaml

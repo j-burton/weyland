@@ -20,3 +20,5 @@ For each module:
 
 (empty until the Pi gains its first module — chat-Claude adds entries
 as new software is installed)
+
+Each module should also appear in `recreate/MANIFEST.md` with its rebuild pattern. MODULES.md is the human inventory; the manifest is the rebuild view.

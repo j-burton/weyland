@@ -16,10 +16,21 @@ Then read the rest of this README so you know how to talk to Julian.
 
 ## These docs are a fleet standard — do not restructure them
 
-This doc set — README, IDENTITY, HARDWARE, CURRENT_STATE, MODULES — is identical on
+This doc set — README, IDENTITY, HARDWARE, CURRENT_STATE, MODULES, plus the recreate/ rebuild bundle — is identical on
 every Pi in the fleet, in the same files and the same order, so that any
 instance of you can land on any Pi cold and know exactly where to look.
 That sameness is the entire value.
+
+## recreate/ — how to rebuild this Pi from blank
+
+The `recreate/` bundle is part of the standard and exists on every Pi (empty until filled). It is how a dead Pi is rebuilt on a fresh board: start at `recreate/REBUILD.md`. Pieces:
+- **MANIFEST.md** — the software list, each row tagged with a recreate pattern: **P1** reinstall from upstream · **P2** reinstall + reapply captured files · **P3** stateful app + native backup + reference inventory · **P4** secret/session = pointer + re-auth.
+- **provisioning/** — the actual captured custom files (configs, scripts, units).
+- **reference/** — inventories + pointers to app-native backups (e.g. a Home Assistant device list, used as a completeness checklist).
+- **secrets.md** — pointers only to what must be re-authed at rebuild; never values.
+- **capture.sh** — re-runnable. Refreshes `MANIFEST.auto.md` + `provisioning/` from the live Pi using `capture.list` (+ optional `capture-extra.sh` hook). Run `bash recreate/capture.sh` after changes so the bundle can't rot.
+
+Same hard rule as the rest: this structure is fleet-wide — change it in weyland, never one-off per-Pi.
 
 You — a future Claude reading this — will be tempted to reorganise, rename,
 merge, split, or invent a "better" layout, or to fold the whole record into

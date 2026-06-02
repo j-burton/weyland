@@ -139,3 +139,18 @@ as a hard rule. Structure changes happen here in weyland (templates + bootstrap)
 and roll out fleet-wide; never as a one-off on a single Pi. KIND (minion|golem)
 lives in IDENTITY and selects behaviour — it does not change where information
 is stored or how it is retrieved.
+
+## The recreate/ bundle — rebuilding a dead Pi (2026-06-02)
+
+Goal Julian stated: *"toaster pi died, a fresh pi is available, recreate it."* A few manual steps are fine. The bundle records only what you **cannot get back** from a clean install; everything else is reinstalled from upstream or rebuilt with chat-Claude's help.
+
+Every Pi carries an identical `recreate/` directory (empty until filled). It is per-**software**, not per-Pi: a Pi lists its software in MANIFEST.md, each row tagged with one of four recreate patterns:
+
+- **P1 — stock reinstall**: comes back clean from upstream; capture = a manifest line (source + version/commit). 
+- **P2 — reinstall + captured customisation**: reinstallable, but local changes a clean install wipes; capture = manifest line + the actual files in `provisioning/`.
+- **P3 — stateful app**: large living state; capture = manifest line + the app's **native backup** + a `reference/` inventory used as a completeness checklist (rebuild → reconcile → flag gaps). 
+- **P4 — secrets & sessions**: logins/tokens/sessions; capture = a **pointer** in secrets.md only, never a value; re-auth by hand at rebuild.
+
+Anti-rot: `capture.sh` is uniform (lives here, seeded to every repo) and re-runnable. It auto-discovers the software list (`MANIFEST.auto.md`) and copies curated custom files (per-Pi `capture.list`) into `provisioning/`, skipping anything secret-looking. App-specific reference dumps go in an optional per-Pi `capture-extra.sh`. Because the scaffold is uniform and empty by default and capture **discovers** what's there, a Pi whose software isn't known yet (e.g. a webcam whose app hasn't arrived, or a not-yet-built network monitor) needs no foreknowledge — capture fills it once the software exists.
+
+What the bundle deliberately cannot do: prove itself. A bundle is only trustworthy once an actual rebuild on a fresh board succeeds (a throwaway test-rig). Until then it is good-faith groundwork.
