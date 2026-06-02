@@ -612,11 +612,12 @@ for k in ("pi_name", "domain", "pc_wake", "wake_token"):
 print(str(d.get("new_password", "") or ""))
 print(str(d.get("ssh_mode", "none") or "none").strip())
 print(str(d.get("ssh_pub_key", "") or "").strip())
+print(str(d.get("kind", "minion") or "minion").strip())
 PY
   )
   PI_NAME="${_vals[0]:-}"; DOMAIN="${_vals[1]:-}"
   IDENT_PC_HOST="${_vals[2]:-}"; IDENT_WAKE_TOK="${_vals[3]:-}"
-  IDENT_NEW_PASSWORD="${_vals[4]:-}"; IDENT_SSH_MODE="${_vals[5]:-none}"; IDENT_SSH_PUB_KEY="${_vals[6]:-}"
+  IDENT_NEW_PASSWORD="${_vals[4]:-}"; IDENT_SSH_MODE="${_vals[5]:-none}"; IDENT_SSH_PUB_KEY="${_vals[6]:-}"; IDENT_KIND="${_vals[7]:-minion}"
   if ! [[ "$PI_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$ ]]; then
     warn "the wizard returned an invalid name ('${PI_NAME}') — prompting in the terminal."
     _identity_from_terminal "$default_name"
@@ -666,7 +667,7 @@ phase_identity() {
   fi
 
   # Gather identity from the browser when the wizard is live, else the terminal.
-  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""; IDENT_NEW_PASSWORD=""; IDENT_SSH_MODE="none"; IDENT_SSH_PUB_KEY=""
+  IDENT_PC_HOST=""; IDENT_WAKE_TOK=""; IDENT_NEW_PASSWORD=""; IDENT_SSH_MODE="none"; IDENT_SSH_PUB_KEY=""; IDENT_KIND="minion"
   if _dashboard_active; then
     _identity_from_browser "$default_name"
   else
@@ -678,6 +679,13 @@ phase_identity() {
   DOMAIN="${DOMAIN:-${PI_NAME}.${DEFAULT_DOMAIN_ROOT}}"
   save_state PI_NAME "$PI_NAME"
   save_state DOMAIN "$DOMAIN"
+
+  # minion = its own on-board mind (Claude Code); golem = brainless, Claude
+  # drives it remotely down the channel. Decides whether the brain phases run.
+  KIND="${IDENT_KIND:-minion}"
+  case "$KIND" in minion|golem) : ;; *) KIND="minion" ;; esac
+  save_state KIND "$KIND"
+  log "kind: ${KIND}"
 
   # System hostname to match PI_NAME (mDNS .local); patch /etc/hosts 127.0.1.1.
   if [ "$(hostname)" != "$PI_NAME" ]; then
@@ -1680,19 +1688,30 @@ main() {
   render_checklist tunnel running;           state_phase tunnel running
   phase_tunnel
   render_checklist tunnel done;              state_phase tunnel done
+  if [ "${KIND:-minion}" = "golem" ]; then
+    log "Phase 6 (Claude Code + wake): skipped - a golem has no on-board mind to summon"
+    render_checklist claude_code done;       state_phase claude_code skipped
+  else
   render_checklist claude_code running;      state_phase claude_code running
   phase_claude_code
   render_checklist claude_code done;         state_phase claude_code done
+  fi
   render_checklist connector running;        state_phase connector running
   phase_connector
   render_checklist connector done;           state_phase connector done
   render_checklist vault running;            state_phase vault running
   phase_vault
   render_checklist vault done;               state_phase vault done
+  if [ "${KIND:-minion}" = "golem" ]; then
+    log "Phase 8 (self-documentation): skipped - a golem has no mind to speak; I document it over the channel"
+    render_checklist selfdoc done; render_checklist summary done
+    state_phase selfdoc skipped;             state_phase summary running
+  else
   render_checklist selfdoc running;          state_phase selfdoc running
   phase_selfdoc
   render_checklist selfdoc done; render_checklist summary done
   state_phase selfdoc done;                  state_phase summary running
+  fi
   # Restore the terminal before printing the summary so it lands on a clean,
   # full screen; the frozen checklist above shows every phase complete.
   _checklist_teardown

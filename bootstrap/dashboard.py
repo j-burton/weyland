@@ -258,6 +258,9 @@ def write_identity(form) -> bool:
     # paste/upload with a trailing newline stays one line (the bash side reads
     # this positionally). The password is taken verbatim (spaces may matter).
     mode = (form.get("ssh_mode", ["none"])[0] or "none").strip()
+    kind = (form.get("kind", ["minion"])[0] or "minion").strip()
+    if kind not in ("minion", "golem"):
+        kind = "minion"
     if mode not in ("none", "existing"):
         mode = "none"
     pub_raw = form.get("ssh_pub_key", [""])[0] or ""
@@ -274,6 +277,7 @@ def write_identity(form) -> bool:
         "new_password": form.get("new_password", [""])[0] or "",
         "ssh_mode": mode,
         "ssh_pub_key": ssh_pub_key,
+        "kind": kind,
     }
     d = os.path.dirname(IDENTITY_FILE) or "."
     tmp = os.path.join(d, ".identity.tmp")
@@ -696,6 +700,7 @@ HTML = r"""<!doctype html>
   .badge.error{background:#2a0a0a; color:#ff6f61; border-color:#7a261c}
   /* stalled — the forge gone cold: ash-blue, no anvil pulse */
   .badge.stalled{background:#1c2430; color:#9fb6c8; border-color:#46566a}
+  .badge.skip{background:#23282f; color:var(--leather); border-color:#3a4350}
   @keyframes anvil{0%,100%{box-shadow:0 0 7px #e8750a44}50%{box-shadow:0 0 22px #e8750aaa}}
   .roster .label{flex:1; font-family:var(--cinzel); font-weight:400; font-size:14px; letter-spacing:.01em}
   li.is-pend .label{color:var(--muted)} li.is-done .label{color:var(--ink)} li.is-error .label{color:#ffb3a8}
@@ -704,6 +709,7 @@ HTML = r"""<!doctype html>
   .stamp{font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; text-align:right}
   li.is-done .stamp{color:var(--gold)} li.is-run .stamp{color:var(--flame-bright)} li.is-pend .stamp{color:var(--leather)} li.is-error .stamp{color:#ff6f61}
   li.is-stalled .stamp{color:#9fb6c8}
+  li.is-skip{opacity:.6} li.is-skip .label{color:var(--leather)} li.is-skip .stamp{color:var(--leather)}
   /* live stall escalation on the running row: amber "still working", red "stuck" */
   li.is-warming .stamp{color:var(--gold); text-shadow:0 0 8px #d4a01744}
   li.is-stuck .stamp{color:#ff6f61; text-shadow:0 0 9px #c0392b55}
@@ -1046,10 +1052,10 @@ HTML = r"""<!doctype html>
     var r=$("roster"); r.innerHTML="";
     ORDER.forEach(function(n){
       var m=PH[n]||[n,"done"], st=by[n]||"pending";
-      var cls=st==="done"?"done":st==="running"?"run":st==="error"?"error":st==="stalled"?"stalled":"pend";
-      var stamp=st==="done"?m[1]:st==="running"?"the hammer strikes":st==="error"?"the strike falters":st==="stalled"?"the forge has gone cold":"awaits the rite";
+      var cls=st==="done"?"done":st==="running"?"run":st==="error"?"error":st==="stalled"?"stalled":st==="skipped"?"skip":"pend";
+      var stamp=st==="done"?m[1]:st==="running"?"the hammer strikes":st==="error"?"the strike falters":st==="stalled"?"the forge has gone cold":st==="skipped"?"a golem needs none":"awaits the rite";
       var li=document.createElement("li"); li.className="is-"+cls;
-      li.innerHTML='<span class="badge '+cls+'"><span>'+(st==="done"?"✦":(st==="error"||st==="stalled")?"!":"")+'</span></span><span class="label"></span><span class="stamp">'+stamp+'</span>';
+      li.innerHTML='<span class="badge '+cls+'"><span>'+(st==="done"?"✦":(st==="error"||st==="stalled")?"!":st==="skipped"?"·":"")+'</span></span><span class="label"></span><span class="stamp">'+stamp+'</span>';
       li.querySelector(".label").textContent=m[0];
       // Stall indicator — only the RUNNING row, computed from the last-activity
       // clock (progress.ts) vs the server `now` (no client clock skew). >25s amber
