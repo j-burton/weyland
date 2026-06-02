@@ -836,12 +836,13 @@ HTML = r"""<!doctype html>
           </div>
 
           <div class="ssh-panel" id="ssh-existing" style="display:none">
-            <p class="ssh-hint">run this in your terminal to print your public key &mdash; it makes one if you don't have it yet &mdash; then paste the output below:</p>
+            <p class="steplead" style="margin:0 0 9px">&#9312; On your computer, run this &mdash; it prints your SSH public key (and creates one first if you don't have it yet):</p>
             <div class="cmd-os"><span id="ssh-os-label">macOS / Linux</span><button type="button" class="osswap" id="ssh-os-swap">on Windows?</button></div>
             <div class="copybox" id="ssh-box-nix"><code class="val cmd" id="ssh-cmd-nix">cat ~/.ssh/id_ed25519.pub 2>/dev/null || { ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -q &amp;&amp; cat ~/.ssh/id_ed25519.pub; }</code><button class="copy" data-copy="ssh-cmd-nix" type="button">Copy</button></div>
             
             <div class="copybox" id="ssh-box-win" style="display:none"><code class="val cmd" id="ssh-cmd-win">if(!(Test-Path $HOME\.ssh\id_ed25519.pub)){ssh-keygen -t ed25519 -f $HOME\.ssh\id_ed25519 -N '""'}; type $HOME\.ssh\id_ed25519.pub</code><button class="copy" data-copy="ssh-cmd-win" type="button">Copy</button></div>
-            <div class="frow" style="margin-top:7px"><label for="ssh-paste">Paste the public key</label>
+            <p class="steplead">&#9313; Paste what it printed below &mdash; the line beginning <b>ssh-ed25519</b>:</p>
+            <div class="frow" style="margin-top:7px"><label for="ssh-paste">Public key</label>
               <textarea id="ssh-paste" rows="2" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
             <p class="ssh-status" id="ssh-existing-status"></p>
           </div>
