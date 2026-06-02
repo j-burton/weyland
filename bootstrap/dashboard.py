@@ -592,6 +592,7 @@ HTML = r"""<!doctype html>
   /* eyebrow — Cinzel 400, widely spaced, with a subtle 1-2px raise */
   .eyebrow{margin:0 0 7px; font-family:var(--cinzel); font-weight:400; font-size:11px; letter-spacing:.34em; text-transform:uppercase; color:var(--flame); text-shadow:0 1px 0 #7a3c08,0 2px 2px rgba(0,0,0,.45)}
   body[data-state="complete"] .eyebrow{color:var(--gold); text-shadow:0 1px 0 #6e5212,0 2px 2px rgba(0,0,0,.45)}
+  body[data-link="lost"] .eyebrow{color:#e8a04a; text-shadow:0 1px 0 #5a3a10,0 2px 2px rgba(0,0,0,.45)}
   .plate{display:inline-block; max-width:100%; padding:7px 22px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
   /* hero Pi name — hot iron letters STAMPED into cold steel: Cinzel 700, a
      parchment->ember gradient fill, and a layered text-shadow that raises the
@@ -988,6 +989,10 @@ HTML = r"""<!doctype html>
     anthropic:{t:"THE INTELLIGENCE AWAITS AWAKENING", s:"the ancient mind will not stir without your blessing", b:"Summon Claude into service →", i:"grant leave · speak the words · the intelligence awakens"}
   };
   var submitted=false;
+  var lostTicks=0;            // consecutive failed /state polls
+  var reachedComplete=false;  // we have seen result.ready at least once
+  var sealed=false;           // the operator clicked the seal
+  var POLL=null;              // polling interval handle
   var nameTouched=false;   // true once the operator types in the name field
   // Continue/restart choice screen. choiceArmed is decided ONCE from the FIRST
   // /state (so it only fires for a run THIS page session didn't start — never
@@ -1055,7 +1060,7 @@ HTML = r"""<!doctype html>
   }
   function applyState(s){
     $("gate").style.display="none";
-    var ready=!!(s.result&&s.result.ready);
+    var ready=!!(s.result&&s.result.ready); if(ready) reachedComplete=true;
     var inBind = submitted || s.identity_submitted || ready || (s.pi_name&&s.pi_name.length>0);
     var stage = ready?"complete":(inBind?"binding":"identity");
 
@@ -1119,10 +1124,35 @@ HTML = r"""<!doctype html>
     } else d.style.display="none";
   }
   function gate(){ $("form").style.display="none"; $("roster").style.display="none"; $("authcard").style.display="none"; $("details").style.display="none"; $("gate").style.display=""; }
+  function stopPoll(){ if(POLL){ clearInterval(POLL); POLL=null; } }
+  function showSealed(){
+    document.body.setAttribute("data-state","complete");
+    document.body.setAttribute("data-link","done");
+    document.body.classList.remove("forge-active","auth-modal");
+    ["roster","authcard","choice","gate","restartbar"].forEach(function(id){ var el=$(id); if(el) el.style.display="none"; });
+    txt("eyebrow","THE MINION IS BOUND");
+    txt("subtext","\u2713 the rite is sealed \u2014 you may safely close this page, my Lord");
+    var sb=$("seal"); if(sb){ sb.textContent="\u2692 the minion is bound"; sb.disabled=true; }
+    var d=$("details"); if(d) d.style.display="";
+  }
+  function showLost(){
+    document.body.setAttribute("data-link","lost");
+    document.body.classList.remove("forge-active");
+    txt("eyebrow","CONTACT WITH THE FORGE IS LOST");
+    if(reachedComplete){ txt("subtext","the rite had completed \u2014 the details above still hold. once copied, this page is safe to close, my Lord"); }
+    else { txt("subtext","the page can\u2019t reach the minion \u2014 it may have finished, or the link dropped. still trying to reach it\u2026"); }
+  }
+  function onPollFail(){
+    lostTicks++;
+    if(sealed){ showSealed(); stopPoll(); return; }
+    if(reachedComplete && lostTicks>=2){ showSealed(); stopPoll(); return; }
+    if(lostTicks>=4){ showLost(); }
+  }
   function tick(){
     fetch("/state?k="+encodeURIComponent(K),{cache:"no-store"})
-      .then(function(res){ if(res.status===403){gate(); return null;} return res.json(); })
-      .then(function(j){ if(j) applyState(j); }).catch(function(){});
+      .then(function(res){ if(res.status===403){gate(); return null;} if(!res.ok){ throw new Error("lost"); } return res.json(); })
+      .then(function(j){ if(j){ lostTicks=0; document.body.removeAttribute("data-link"); applyState(j); } })
+      .catch(function(){ onPollFail(); });
   }
   $("i-name").addEventListener("input", function(){ nameTouched=true; if(document.body.getAttribute("data-state")==="identity") setName(liveName()); });
   // Three-page identity form so each screen fits without scrolling:
@@ -1214,7 +1244,7 @@ HTML = r"""<!doctype html>
         else {m.className="patmsg err"; m.textContent="the forge rejected it";} })
       .catch(function(){m.className="patmsg err"; m.textContent="the forge could not be reached";});
   });
-  $("seal").addEventListener("click", function(){ this.textContent="⚒ the minion is bound"; this.disabled=true; fetch("/done?k="+encodeURIComponent(K),{method:"POST"}).catch(function(){}); });
+  $("seal").addEventListener("click", function(){ this.textContent="⚒ the minion is bound"; this.disabled=true; sealed=true; fetch("/done?k="+encodeURIComponent(K),{method:"POST"}).catch(function(){}); setTimeout(function(){ showSealed(); stopPoll(); }, 900); });
   $("startover").addEventListener("click", function(){
     if(!confirm("Start over? This stops the current rite and returns to naming the minion. Nothing already installed is undone.")) return;
     var b=this; b.disabled=true; b.innerHTML="&#8635; starting over…";
@@ -1378,7 +1408,8 @@ HTML = r"""<!doctype html>
     document.querySelectorAll(".howto .tab").forEach(function(x){ x.setAttribute("aria-pressed", String(x===t)); });
     document.querySelectorAll(".howto .tabpane").forEach(function(p){ p.style.display = p.getAttribute("data-pane")===tab?"":"none"; });
   }); });
-  tick(); setInterval(tick, 1500);
+  tick(); POLL=setInterval(tick, 1500);
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden && POLL) tick(); });
 </script>
 </body>
 </html>
