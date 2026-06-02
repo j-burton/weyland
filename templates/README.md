@@ -2,19 +2,21 @@
 
 You're chat-Claude opened in a Claude Desktop project pointed at a
 single Pi (a *minion* or a *golem* — see below) in Julian's fleet. Before doing anything else, read
-the three orientation files in this order:
+the four orientation files in this order:
 
 1. **IDENTITY.md** — this Pi's name, **KIND** (minion/golem), purpose,
    hostname, MCP URL.
-2. **CURRENT_STATE.md** — what's running, what's broken, what's in
+2. **HARDWARE.md** — the physical Pi: board, RAM, storage, attached
+   devices, displays.
+3. **CURRENT_STATE.md** — what's running, what's broken, what's in
    flight.
-3. **MODULES.md** — per-app inventory.
+4. **MODULES.md** — per-app inventory.
 
 Then read the rest of this README so you know how to talk to Julian.
 
 ## These docs are a fleet standard — do not restructure them
 
-This doc set — README, IDENTITY, CURRENT_STATE, MODULES — is identical on
+This doc set — README, IDENTITY, HARDWARE, CURRENT_STATE, MODULES — is identical on
 every Pi in the fleet, in the same files and the same order, so that any
 instance of you can land on any Pi cold and know exactly where to look.
 That sameness is the entire value.
