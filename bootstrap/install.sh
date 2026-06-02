@@ -980,6 +980,8 @@ phase_per_pi_repo() {
         echo "# IDENTITY — ${PI_NAME}"
         echo
         echo "- **PI_NAME:** ${PI_NAME}"
+        echo "- **KIND:** ${KIND:-minion}"
+        echo "- **PURPOSE:** _(first session fills this in — what this Pi is for)_"
         echo "- **DOMAIN:** ${DOMAIN}"
         echo "- **MCP URL:** https://${DOMAIN}/mcp"
         echo "- **Hostname:** $(hostname)"
@@ -1504,7 +1506,7 @@ phase_selfdoc() {
   # The first task we hand the freshly-bootstrapped CC: document this Pi.
   # Sent as a single line so the TUI receives it as one prompt; Enter submits.
   local task
-  task="You have just been bootstrapped as a new weyland minion. Your first task is to document this Pi. Investigate what hardware is attached, what software is installed and running, and what this Pi appears to be for. Then fill in these files in ${PI_DIR}: HARDWARE.md (physical hardware, attached devices, display, GPIO etc — use lsusb, lspci, vcgencmd, aplay -l, hostname -I, df -h, free -h); CURRENT_STATE.md (what services are running, anything broken, recent changes — first entry: 'bootstrapped by weyland'); MODULES.md (one section per installed service/app, following the template); README.md (one paragraph describing what this Pi is and does). Commit and push all four files when done. If the Pi appears to be a fresh install with no purpose yet, say so in README.md and leave MODULES.md sparse."
+  task="You have just been bootstrapped as a new weyland minion. Your first task is to document this Pi. Investigate what hardware is attached, what software is installed and running, and what this Pi appears to be for. Then fill in these files in ${PI_DIR}: HARDWARE.md (physical hardware, attached devices, display, GPIO etc — use lsusb, lspci, vcgencmd, aplay -l, hostname -I, df -h, free -h); CURRENT_STATE.md (what services are running, anything broken, recent changes — first entry: 'bootstrapped by weyland'); MODULES.md (one section per installed service/app, following the template). Also set the PURPOSE line in IDENTITY.md to one sentence on what this Pi is for. Do NOT modify README.md — it is the shared fleet orientation doc and must stay byte-identical across every Pi. Commit and push when done. If the Pi appears to be a fresh install with no purpose yet, say so in the PURPOSE line and leave MODULES.md sparse."
 
   log "sending self-documentation task to CC in tmux session '${PI_NAME}'"
   tmux send-keys -t "$PI_NAME" -l "$task"

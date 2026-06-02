@@ -129,3 +129,13 @@ hand-writing per-Pi docs, the bootstrap's self-documentation phase hands CC a
 task to inspect its own hardware, software, and purpose and fill in
 `HARDWARE.md` / `CURRENT_STATE.md` / `MODULES.md` / `README.md` in its repo —
 so the per-Pi repo is already oriented before the first human chat.
+
+## Doc structure is a fleet standard (do not restructure per-Pi)
+
+The per-Pi doc set (README, IDENTITY, CURRENT_STATE, MODULES) is identical
+across every Pi — same files, same order — so any chat-Claude lands on any Pi
+cold and knows where to look. The orientation README states this to its reader
+as a hard rule. Structure changes happen here in weyland (templates + bootstrap)
+and roll out fleet-wide; never as a one-off on a single Pi. KIND (minion|golem)
+lives in IDENTITY and selects behaviour — it does not change where information
+is stored or how it is retrieved.

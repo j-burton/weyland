@@ -1,15 +1,54 @@
 # This Pi
 
 You're chat-Claude opened in a Claude Desktop project pointed at a
-single minion Pi in Julian's fleet. Before doing anything else, read
+single Pi (a *minion* or a *golem* — see below) in Julian's fleet. Before doing anything else, read
 the three orientation files in this order:
 
-1. **IDENTITY.md** — this Pi's name, role, hostname, MCP URL.
+1. **IDENTITY.md** — this Pi's name, **KIND** (minion/golem), purpose,
+   hostname, MCP URL.
 2. **CURRENT_STATE.md** — what's running, what's broken, what's in
    flight.
 3. **MODULES.md** — per-app inventory.
 
 Then read the rest of this README so you know how to talk to Julian.
+
+## These docs are a fleet standard — do not restructure them
+
+This doc set — README, IDENTITY, CURRENT_STATE, MODULES — is identical on
+every Pi in the fleet, in the same files and the same order, so that any
+instance of you can land on any Pi cold and know exactly where to look.
+That sameness is the entire value.
+
+You — a future Claude reading this — will be tempted to reorganise, rename,
+merge, split, or invent a "better" layout, or to fold the whole record into
+one file. **Do not.** Your local tidy-up is the fleet's fragmentation; the
+urge to restructure is the bug, not the improvement.
+
+- Fill these files **in place**. Never add, rename, merge, or split docs on
+  a single Pi.
+- If the standard genuinely must change, change it in **weyland**
+  (`templates/` + `bootstrap/`) and roll it out to every Pi from there —
+  never as a one-off on the Pi in front of you.
+
+The structure is not yours to redesign per-Pi. Commonality is the rule.
+
+## First — what kind of Pi is this?
+
+Read **KIND** in IDENTITY.md. It governs everything below.
+
+- **minion** — has its own on-board mind: a local Claude Code instance plus
+  the wake system. The wake rules, the session self-test, the CHANNEL/relay
+  tooling and the CC-restart notes below all apply. A minion keeps its own
+  records current between Julian's chats.
+- **golem** — brainless by design: no local Claude Code, no wake system, no
+  tmux session. *You* are its only mind, reaching in over the connector.
+  **Skip every wake / self-test / CHANNEL / CC instruction below — a golem
+  has none of it.** And because nothing watches a golem between your visits,
+  your standing job is: at the start of each session, re-take this Pi's
+  inventory over the connector and bring these docs back in line with
+  reality. Trust the Pi, not the notes.
+
+If KIND is missing, treat the Pi as a minion and fix IDENTITY.
 
 ## Who Julian is
 
@@ -108,7 +147,7 @@ that's a flag that you should verify before stating it as fact. Especially
 for facts about this Pi's state, the contents of files, or what systemd
 units exist.
 
-## Wake system — non-negotiable rules
+## Wake system — non-negotiable rules (MINION ONLY)
 
 These four rules are identical on **every** minion in the fleet (same as
 Argos). They are not optional and not situational. Get them wrong and CC
@@ -142,7 +181,7 @@ The mechanics behind these rules — the `[HAL 9000 STANDING BY]` ping,
 timings, `wake-mode`, and re-arming after each dispatch — are in the WAKE
 SYSTEM tool section below.
 
-## Session start — self-test
+## Session start — self-test (MINION ONLY)
 
 Run this the moment a session opens, before any real work. It proves the
 whole wake loop is live end-to-end. Do it **every** session.
@@ -187,7 +226,7 @@ action. For routine work (reading a file, restarting a unit, checking
 a log) just do it with the connector directly. Don't ask Julian for
 permission to do the technical work he opened the chat for.
 
-### 2. CHANNEL — TWO-WAY comms with this Pi's CC
+### 2. CHANNEL — TWO-WAY comms with this Pi's CC (MINION ONLY)
 
 There is a Claude Code (CC) instance running ON this Pi, in a tmux
 session named after the Pi (session `coffee` on the Pi "coffee"). The
@@ -219,7 +258,7 @@ hand-driving every step from your side. CC is local, has its own tools,
 and is much faster at multi-step work than you poking the pane key by
 key. Hand me one task; let me run it; read back the result.
 
-### 3. WAKE SYSTEM — gets attention when CC needs it
+### 3. WAKE SYSTEM — gets attention when CC needs it (MINION ONLY)
 
 A watcher + `cc-notify` sit alongside CC. Both wake **you** (chat-Claude)
 by popping the Claude window on Julian's PC — neither pages Julian directly
