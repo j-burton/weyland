@@ -593,6 +593,21 @@ HTML = r"""<!doctype html>
   .eyebrow{margin:0 0 7px; font-family:var(--cinzel); font-weight:400; font-size:11px; letter-spacing:.34em; text-transform:uppercase; color:var(--flame); text-shadow:0 1px 0 #7a3c08,0 2px 2px rgba(0,0,0,.45)}
   body[data-state="complete"] .eyebrow{color:var(--gold); text-shadow:0 1px 0 #6e5212,0 2px 2px rgba(0,0,0,.45)}
   body[data-link="lost"] .eyebrow{color:#e8a04a; text-shadow:0 1px 0 #5a3a10,0 2px 2px rgba(0,0,0,.45)}
+  /* --- kind-choice splash: minion vs golem --- */
+  .kindpick{display:flex; flex-direction:column; gap:13px}
+  .kintro{margin:0 0 1px; font-family:var(--serif); font-size:13.5px; color:var(--leather); text-align:center}
+  .kcard{display:block; width:100%; text-align:left; cursor:pointer; background:linear-gradient(180deg,var(--steel2),var(--steel)); border:1px solid var(--line2); border-radius:13px; padding:15px 17px; color:var(--ink); transition:border-color .15s, box-shadow .15s, transform .05s}
+  .kcard:hover{border-color:var(--flame); box-shadow:0 0 0 1px var(--flame) inset, 0 0 26px #e8750a22}
+  .kcard:active{transform:translateY(1px)}
+  .kcard:focus-visible{outline:2px solid var(--flame-bright); outline-offset:2px}
+  .kcard .kgo{float:right; color:var(--flame); font-family:var(--cinzel); font-size:12.5px; letter-spacing:.04em}
+  .kcard .kglyph{font-size:18px; line-height:1; color:var(--flame)}
+  .kcard .khead{display:flex; align-items:baseline; gap:9px; margin-bottom:6px}
+  .kcard .kname{font-family:var(--cinzel); font-weight:700; font-size:18px; letter-spacing:.06em; color:var(--gold)}
+  .kcard .kessence{font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--flame)}
+  .kcard .kbody{font-family:var(--serif); font-size:13px; line-height:1.5; color:var(--ink); margin:0}
+  .kcard .khw{display:block; margin-top:9px; padding-top:8px; border-top:1px solid var(--line); font-family:var(--mono); font-size:10.5px; letter-spacing:.03em; color:var(--leather)}
+  .kcard .khw b{color:var(--muted); font-weight:600}
   .plate{display:inline-block; max-width:100%; padding:7px 22px; border-radius:8px; border:1px solid var(--line2); background:linear-gradient(180deg,#36414f,#262d38); box-shadow:0 0 0 1px #11161c inset,0 0 48px #e8750a22,0 14px 38px #0008,0 1px 0 #6a7686aa inset}
   /* hero Pi name — hot iron letters STAMPED into cold steel: Cinzel 700, a
      parchment->ember gradient fill, and a layered text-shadow that raises the
@@ -803,17 +818,34 @@ HTML = r"""<!doctype html>
     </header>
 
     <div class="stage" id="stage">
+      <section class="kindpick" id="kindpick" aria-label="Choose what to forge" style="display:none">
+        <p class="kintro">Two kinds may be forged, my Lord &mdash; choose what this one shall be.</p>
+        <button type="button" class="kcard" id="kc-minion">
+          <span class="kgo">choose &rarr;</span>
+          <div class="khead"><span class="kglyph">&#10022;</span><span class="kname">MINION</span><span class="kessence">a mind of its own</span></div>
+          <p class="kbody">A minion thinks for itself &mdash; Claude dwells <i>within</i> it, and can reason, decide and labour on its own, even when no one is watching. Forge one for real work: a box that runs its own tasks, keeps watch, reacts, and mends itself.</p>
+          <span class="khw"><b>Recommended hardware:</b> Pi 4 or Pi 5, 4&nbsp;GB+ &mdash; 8&nbsp;GB for heavier work.</span>
+        </button>
+        <button type="button" class="kcard" id="kc-golem">
+          <span class="kgo">choose &rarr;</span>
+          <div class="khead"><span class="kglyph">&#9724;</span><span class="kname">GOLEM</span><span class="kessence">shaped &amp; directed</span></div>
+          <p class="kbody">A golem has no mind of its own. Claude shapes it and drives its every move from afar, down the forge-link. Forge one for a single purpose &mdash; a camera, a sensor, a sign &mdash; that need only do its one thing, faithfully, forever.</p>
+          <span class="khw"><b>Recommended hardware:</b> any board, down to the smallest &mdash; Pi&nbsp;Zero&nbsp;2&nbsp;W, Pi&nbsp;3, 512&nbsp;MB+.</span>
+        </button>
+      </section>
+
       <section class="forge-form" id="form" aria-label="Name the minion">
         <!-- Page 1 — essentials. Next validates the name, then reveals page 2. -->
         <div class="form-page" id="form-p1">
-          <h3>NAME THE MINION</h3>
-          <p class="lead">speak the minion's name and domain, my Lord — the rite cannot begin without it</p>
-          <div class="frow"><label for="i-name">Minion name</label>
+          <h3 id="name-h3">NAME THE MINION</h3>
+          <p class="lead" id="name-lead">speak the minion's name and domain, my Lord — the rite cannot begin without it</p>
+          <div class="frow"><label for="i-name" id="name-lbl">Minion name</label>
             <input id="i-name" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. inkypi"></div>
           <div class="frow"><label for="i-domain">Domain</label>
             <input id="i-domain" type="text" autocomplete="off" spellcheck="false" placeholder="julianburton.com"></div>
           <button class="btn btn-outline btn-block" type="button" id="form-next">Next &rarr;</button>
           <p class="fmsg" id="fmsg1"></p>
+          <a class="backlink" id="kind-again" href="#" role="button">&larr; choose minion or golem</a>
         </div>
         <!-- Page 2 — optional extras. Values persist across Back (hidden, not reset). -->
         <div class="form-page" id="form-p2" style="display:none">
@@ -995,6 +1027,7 @@ HTML = r"""<!doctype html>
   var POLL=null;              // polling interval handle
   var autoOpenedDetails=false; // talisman auto-expanded once at completion
   var nameTouched=false;   // true once the operator types in the name field
+  var kind=null;            // "minion" | "golem" - chosen on the splash
   // Continue/restart choice screen. choiceArmed is decided ONCE from the FIRST
   // /state (so it only fires for a run THIS page session didn't start — never
   // popping up on the operator who just submitted identity). choiceDismissed
@@ -1084,12 +1117,14 @@ HTML = r"""<!doctype html>
         var pre=((s.pi_name||s.hostname||"")+"").trim().toLowerCase();
         if(/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(pre) && pre!=="raspberrypi"){ inp.value=pre; }
       }
-      setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext","answer the call, my Lord — name the minion");
+      setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext", kind===null?"what manner of servant shall be forged, my Lord?":("answer the call, my Lord \u2014 name the "+kind));
     }
     else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow","The minion is forged \u2014 one rite remains"); txt("subtext","bind it to Claude with the talisman below, then seal the rite"); }
     else { setName(s.pi_name||pn); txt("eyebrow","A binding is upon us"); txt("subtext","Weyland's hammer falls — "+(s.pi_name||pn)+" shall be bound, Master"); }
 
-    $("form").style.display = stage==="identity"?"":"none";
+    var pickNeeded = (stage==="identity" && kind===null);
+    var kp=$("kindpick"); if(kp) kp.style.display = pickNeeded?"":"none";
+    $("form").style.display = (stage==="identity" && !pickNeeded)?"":"none";
     $("roster").style.display = stage==="identity"?"none":"";
     if(stage!=="identity") renderRoster(s.phases, s.progress, s.now);
 
@@ -1170,6 +1205,25 @@ HTML = r"""<!doctype html>
   //   p1 name+domain  ->  p2 password+wake  ->  p3 SSH + SUBJUGATE (final commit).
   // Values persist across Back/Next since the inputs are only hidden, never reset.
   var NAME_OK=/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
+  function applyKindCopy(){
+    var w = kind || "minion";
+    var W = w.charAt(0).toUpperCase()+w.slice(1);
+    var h=$("name-h3"); if(h) h.textContent="NAME THE "+w.toUpperCase();
+    var ld=$("name-lead"); if(ld) ld.textContent="speak the "+w+"\u2019s name and domain, my Lord \u2014 the rite cannot begin without it";
+    var lb=$("name-lbl"); if(lb) lb.textContent=W+" name";
+  }
+  function pickKind(k){
+    kind=k; applyKindCopy();
+    var kp=$("kindpick"); if(kp) kp.style.display="none";
+    $("form").style.display=""; showFormPage(1);
+    setName(liveName()); txt("subtext","answer the call, my Lord \u2014 name the "+k);
+    var inp=$("i-name"); if(inp){ try{ inp.focus(); }catch(e){} }
+  }
+  (function(){
+    var a=$("kc-minion"); if(a) a.addEventListener("click", function(){ pickKind("minion"); });
+    var b=$("kc-golem"); if(b) b.addEventListener("click", function(){ pickKind("golem"); });
+    var c=$("kind-again"); if(c) c.addEventListener("click", function(e){ e.preventDefault(); kind=null; var kp=$("kindpick"); if(kp) kp.style.display=""; $("form").style.display="none"; setName(liveName()); txt("subtext","what manner of servant shall be forged, my Lord?"); });
+  })();
   function showFormPage(n){
     $("form-p1").style.display = n===1?"":"none";
     $("form-p2").style.display = n===2?"":"none";
@@ -1195,7 +1249,7 @@ HTML = r"""<!doctype html>
     if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="paste your public key first, my Lord"; return; }
     if(sshMode==="generate"){ ensureGenerated(); if(!sshPubKey){ m.style.color="#e88"; m.textContent="the key wouldn\u2019t forge \u2014 try \u201cAdd a key\u201d instead"; return; } }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
-    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode==="generate"?"existing":sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
+    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode==="generate"?"existing":sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey)+"&kind="+encodeURIComponent(kind||"minion");
     fetch("/identity?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
       .then(function(r){ if(r.ok){ submitted=true; m.textContent=""; tick(); } else { m.style.color="#e88"; m.textContent="the forge refused that name"; } })
       .catch(function(){ m.style.color="#e88"; m.textContent="the forge could not be reached"; });
