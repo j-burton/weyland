@@ -111,7 +111,7 @@ At the end the script prints a block with everything you need:
     Name:            coffee
     URL:             https://coffee.julianburton.com/mcp
     OAuth Client ID: weyland-mcp-claude-ai
-    Client Secret:   (leave blank — public client, PKCE)
+    Client Secret:   (leave blank)
 
   --- ON FIRST CONNECT ---
     Open the consent URL and paste the bearer token there ONE time:

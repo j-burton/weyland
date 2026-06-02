@@ -758,6 +758,10 @@ HTML = r"""<!doctype html>
   .field{margin:12px 0} .field:first-child{margin-top:0}
   .field label{display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
   .copybox{display:flex; gap:8px; align-items:stretch}
+  .steplead{font-family:var(--serif); font-style:italic; color:var(--muted); font-size:13.5px; line-height:1.5; margin:18px 0 9px}
+  .steplead:first-child{margin-top:0}
+  .steplead b{font-style:normal; color:var(--ink)}
+  .hint{text-transform:none; letter-spacing:0; font-style:italic; font-weight:normal; color:var(--muted); font-size:11px}
   .val{flex:1; min-width:0; font-family:var(--mono); font-size:13px; color:var(--ink); background:#1a212a; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; overflow-x:hidden; white-space:pre-wrap; overflow-wrap:anywhere}
   a.val{display:block; text-decoration:none; color:var(--flame-bright)} a.val:hover{text-decoration:underline}
   textarea.val{white-space:pre-wrap; word-break:break-word; height:104px; resize:vertical; line-height:1.45; width:100%}
@@ -882,12 +886,16 @@ HTML = r"""<!doctype html>
     <div class="details" id="details" style="display:none">
       <button class="disclose" id="disclose" type="button" aria-expanded="false" aria-controls="panel">Consult the talisman &#9662;</button>
       <section class="panel" id="panel" aria-label="Connector details">
-        <div class="field"><label for="f-url">MCP URL</label><div class="copybox"><code class="val" id="f-url"></code><button class="copy" data-copy="f-url" type="button">Copy</button></div></div>
+        <p class="steplead">&#9312; In Claude: <b>&#65291; &rarr; Manage connectors</b> (or <b>&#9776; &rarr; Customise &rarr; Connectors</b>), then <b>&#65291; Add custom connector</b> &mdash; and inscribe these:</p>
+        <div class="field"><label for="f-name">Name</label><div class="copybox"><code class="val" id="f-name"></code><button class="copy" data-copy="f-name" type="button">Copy</button></div></div>
+        <div class="field"><label for="f-url">Remote MCP server URL</label><div class="copybox"><code class="val" id="f-url"></code><button class="copy" data-copy="f-url" type="button">Copy</button></div></div>
         <div class="pair">
-          <div class="field"><label for="f-cid">OAuth Client ID</label><div class="copybox"><code class="val" id="f-cid"></code><button class="copy" data-copy="f-cid" type="button">Copy</button></div></div>
-          <div class="field"><label>OAuth Client Secret</label><code class="val" style="color:var(--muted)">&mdash; leave blank (PKCE) &mdash;</code></div>
+          <div class="field"><label for="f-cid">OAuth Client ID <span class="hint">(under Advanced settings)</span></label><div class="copybox"><code class="val" id="f-cid"></code><button class="copy" data-copy="f-cid" type="button">Copy</button></div></div>
+          <div class="field"><label>OAuth Client Secret</label><code class="val" style="color:var(--muted)">&mdash; leave blank &mdash;</code></div>
         </div>
-        <div class="field"><label for="f-bearer">Bearer token &mdash; speak it once into the consent page</label><div class="copybox"><code class="val" id="f-bearer"></code><button class="copy" data-copy="f-bearer" type="button">Copy</button></div></div>
+        <p class="steplead">&#9313; Click <b>Add</b>, then open the new connector and <b>Connect</b>.</p>
+        <p class="steplead">&#9314; Claude opens the consent gate (or open it yourself below) &mdash; speak the bearer token once, then <b>Approve</b>.</p>
+        <div class="field"><label for="f-bearer">Bearer token &mdash; paste once into the consent page</label><div class="copybox"><code class="val" id="f-bearer"></code><button class="copy" data-copy="f-bearer" type="button">Copy</button></div></div>
         <div class="pair">
           <div class="field"><label for="f-ct">Consent &mdash; tunnel</label><div class="copybox"><a class="val" id="f-ct" href="#" target="_blank" rel="noopener"></a><button class="copy" data-copy="f-ct" type="button">Copy</button></div></div>
           <div class="field"><label for="f-cl">Consent &mdash; local</label><div class="copybox"><a class="val" id="f-cl" href="#" target="_blank" rel="noopener"></a><button class="copy" data-copy="f-cl" type="button">Copy</button></div></div>
@@ -1056,7 +1064,7 @@ HTML = r"""<!doctype html>
 
     var d=$("details");
     if(ready){ d.style.display=""; var r=s.result;
-      txt("f-url",r.mcp_url); txt("f-cid",r.client_id||"weyland-mcp-claude-ai"); txt("f-bearer",r.bearer);
+      txt("f-name",s.pi_name||""); txt("f-url",r.mcp_url); txt("f-cid",r.client_id||"weyland-mcp-claude-ai"); txt("f-bearer",r.bearer);
       href("f-ct",r.consent_tunnel); href("f-cl",r.consent_local); href("f-repo",r.repo); setval("f-proj",r.project_instructions);
     } else d.style.display="none";
   }
