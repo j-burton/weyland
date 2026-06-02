@@ -647,6 +647,16 @@ HTML = r"""<!doctype html>
   .chip:hover{border-color:var(--flame); color:var(--flame-bright)} .chip.ok{border-style:solid; border-color:#6e5212; color:var(--gold)}
   .ssh-status{font-family:var(--mono); font-size:11px; letter-spacing:.04em; margin:9px 0 0; min-height:13px; color:var(--muted)}
   .ssh-status.ok{color:var(--gold)} .ssh-status.err{color:#e88}
+  .putty{margin-top:11px; border-top:1px solid var(--line); padding-top:9px}
+  .putty>summary{cursor:pointer; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--flame-bright); list-style:none; outline:none}
+  .putty>summary::-webkit-details-marker{display:none}
+  .putty>summary::before{content:"▸ "; color:var(--flame)}
+  .putty[open]>summary::before{content:"▾ "}
+  .putty .chip{margin:2px 0}
+  .putty-note{font-family:var(--serif); font-size:12px; color:var(--leather); line-height:1.55; margin:7px 0 0}
+  .putty-note b{color:var(--ink); font-weight:600}
+  .putty-note code{font-family:var(--mono); font-size:11px; color:var(--ink); background:#11161c; padding:1px 5px; border-radius:4px}
+  .putty-dim{color:var(--muted)}
   .ssh-warn{font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:#ffcf8a; background:#241a08; border:1px solid #5a4a20; border-radius:8px; padding:8px 10px; margin:0 0 11px}
   .dlrow{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 6px}
   /* post-download "now move it here" instruction, revealed once a download fires */
@@ -845,6 +855,16 @@ HTML = r"""<!doctype html>
             <div class="frow" style="margin-top:7px"><label for="ssh-paste">Public key</label>
               <textarea id="ssh-paste" rows="2" autocomplete="off" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
             <p class="ssh-status" id="ssh-existing-status"></p>
+            <details class="putty">
+              <summary>On Windows with PuTTY? &mdash; where the key goes</summary>
+              <div class="putty-body">
+                <p class="steplead" style="margin:11px 0 6px">First, find the page that&rsquo;s easy to lose &mdash; tap to copy the trail through the menu:</p>
+                <span class="chip" data-copy-text="Connection > SSH > Auth > Credentials" role="button" tabindex="0">Connection &rsaquo; SSH &rsaquo; Auth &rsaquo; Credentials</span>
+                <p class="putty-note">There, set <b>Private key file for authentication</b> &rarr; <b>Browse</b> &rarr; pick your <code>.ppk</code>. <span class="putty-dim">(your <code>id_ed25519</code> from above becomes a <code>.ppk</code> once, in PuTTYgen)</span></p>
+                <p class="steplead" style="margin:11px 0 6px">Then make it stick, so you never hunt again:</p>
+                <p class="putty-note">Back on the <b>Session</b> page &rarr; click your minion under <b>Saved Sessions</b> &rarr; <b>Save</b>. Next time, just double-click it.</p>
+              </div>
+            </details>
           </div>
 
         </div>
