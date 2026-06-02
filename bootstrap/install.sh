@@ -48,12 +48,24 @@ resolve_weyland_dir() {
     return 0
   fi
 
-  # Fallback: clone weyland to a temp dir.
+  # Fallback: fetch weyland to a temp dir. A fresh Raspberry Pi OS Lite has NO
+  # git yet (it only arrives later, in phase_packages), so this step must not
+  # depend on it: use git if present, otherwise pull a tarball with curl (always
+  # available — the bootstrap itself was curled) + tar. Runs BEFORE packages, so
+  # it can only lean on tools the base image guarantees.
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   log "fetching weyland repo to ${tmp_dir}"
-  git clone --depth 1 https://github.com/j-burton/weyland.git "$tmp_dir" >/dev/null 2>&1 \
-    || die "could not clone weyland repo to ${tmp_dir}"
+  if command -v git >/dev/null 2>&1 \
+     && git clone --depth 1 https://github.com/j-burton/weyland.git "$tmp_dir" >/dev/null 2>&1; then
+    :
+  elif curl -fsSL https://codeload.github.com/j-burton/weyland/tar.gz/refs/heads/main 2>/dev/null \
+         | tar -xz -C "$tmp_dir" --strip-components=1 2>/dev/null \
+       && [ -d "$tmp_dir/bootstrap" ]; then
+    :
+  else
+    die "could not fetch weyland repo to ${tmp_dir} (tried git + curl tarball)"
+  fi
   WEYLAND_REPO_DIR="$tmp_dir"
   echo "$WEYLAND_REPO_DIR"
 }
@@ -1656,7 +1668,11 @@ main() {
   # Restore the terminal on normal exit; die cleanly (killing the dashboard +
   # children) on interrupt/term/hangup — never run away in the background.
   trap _cleanup EXIT
-  trap _on_signal INT TERM HUP
+  trap _on_signal INT TERM
+  trap '' HUP          # SSH hangup must NOT tear down the rite: the operator
+                       # grabs the URL, closes SSH, and drives it from the
+                       # browser; the nohup'd dashboard and this script carry on
+                       # headless. (Ctrl-C / SIGTERM still tear down, as before.)
 
   # Passwordless sudo first (silent when already granted, which is the norm) so
   # nothing prompts after the URL. Then the dashboard prints the URL and (in
