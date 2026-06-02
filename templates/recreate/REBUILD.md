@@ -10,6 +10,7 @@ Flash Raspberry Pi OS (see MANIFEST for version), then bind via weyland. To re-r
 ## 2. Reapply config (P2)   — copy files from provisioning/ back to their real paths
 ## 3. Restore state (P3)    — reinstall app, restore its native backup, reconcile against reference/ inventory, flag gaps
 ## 4. Re-auth (P4)          — restore secrets from the vault (see secrets.md), log in by hand
+## 4b. Wake channel        — restore /etc/weyland/wake.env (PC_WAKE_URL + WAKE_TOKEN) or the in-chat wake is dead; then run the session-start self-test to confirm
 
 ## Known manual residue
 - <one-time logins, Matter re-pairing, anything that needs a human>

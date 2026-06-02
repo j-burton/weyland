@@ -78,6 +78,29 @@ fi
 # Readable by the service user (cc-notify / watcher run as admin, not root).
 sudo chmod 0644 /etc/weyland/wake.env
 
+# 3c. Verify the wake channel so a minion never comes up with a SILENTLY dead
+#     wake. A blank or unreachable PC channel used to go unnoticed until a ping
+#     failed to arrive. This never aborts the install (set -e safe).
+_wu="$(grep -E '^PC_WAKE_URL=' /etc/weyland/wake.env | cut -d= -f2-)"
+_wt="$(grep -E '^WAKE_TOKEN=' /etc/weyland/wake.env | cut -d= -f2-)"
+if [ -z "$_wu" ] || [ -z "$_wt" ]; then
+  echo "WARNING: PC wake channel is BLANK on this minion — the in-chat" >&2
+  echo "         [HAL 9000 STANDING BY] wake will NOT fire; only phone Pushcut" >&2
+  echo "         will. Set PC_WAKE_URL + WAKE_TOKEN in /etc/weyland/wake.env to" >&2
+  echo "         enable it (they are fleet-wide: same PC listener + shared token)." >&2
+else
+  _code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 8 \
+            -X POST "$_wu" -H "X-Wake-Token: $_wt" \
+            -H 'Content-Type: application/json' \
+            -d "{\"pi\":\"${PI_NAME}\",\"msg\":\"wake install self-test\"}" 2>/dev/null || true)"
+  if [ "$_code" = "200" ]; then
+    echo "wake channel verified: POST ${_wu} -> 200 OK"
+  else
+    echo "WARNING: wake POST to ${_wu} returned '${_code}' (expected 200) —" >&2
+    echo "         check the PC listener is up and the token matches." >&2
+  fi
+fi
+
 # 4. Register cc-notify as CC's Notification hook.
 SETTINGS_DIR="${HOME}/.claude"
 SETTINGS_FILE="${SETTINGS_DIR}/settings.json"

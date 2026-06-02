@@ -202,8 +202,10 @@ Run this the moment a session opens, before any real work. It proves the
 whole wake loop is live end-to-end. Do it **every** session.
 
 1. **Arm the watcher** — call `restart_wake`; confirm `watcher_alive: true`.
-2. **Send CC a trivial task** — `tmux_send_keys` it to echo the date to a
-   scratch file: `echo $(date) > /tmp/wake-test.txt`.
+2. **Send CC a brief task that runs long enough to be SEEN working** — the
+   watcher only counts a completion if it catches CC in the working state for
+   ~6s, so an instant command can slip between polls unseen. Use a short sleep:
+   `tmux_send_keys` it `sleep 15 && echo wake-test-done`.
 3. **Go quiet and wait for the `[HAL 9000 STANDING BY]` ping.** End your turn
    after sending the test — do NOT poll the pane. When CC finishes and goes
    idle, the wake loop pings you and `[HAL 9000 STANDING BY]` arrives in the

@@ -41,6 +41,7 @@ MODE_FILE = "/etc/weyland/wake-mode"
 PUSHCUT_ENV = "/etc/weyland/pushcut.env"
 WAKE_ENV = "/etc/weyland/wake.env"
 STATE_FILE = "/var/lib/weyland/tmux-watcher-state.json"
+REARM_FILE = "/var/lib/weyland/wake-rearm-seen"  # last-seen wake-mode mtime
 LOG = "/var/log/weyland-wake.log"
 
 POLL_SEC = 3
@@ -141,6 +142,41 @@ def write_state(s):
             json.dump(s, f)
     except Exception as e:
         log(f"state-write-err err={type(e).__name__}")
+
+
+def _read_rearm():
+    try:
+        with open(REARM_FILE) as f:
+            return float(f.read().strip())
+    except Exception:
+        return None
+
+
+def _write_rearm(m):
+    try:
+        os.makedirs(os.path.dirname(REARM_FILE), exist_ok=True)
+        with open(REARM_FILE, "w") as f:
+            f.write(repr(float(m)))
+    except Exception as e:
+        log(f"rearm-write-err err={type(e).__name__}")
+
+
+def rearm_pending():
+    """True iff /etc/weyland/wake-mode was touched since last poll (restart_wake
+    flips it off->on). A genuine re-arm signal: chat-Claude can stop an in-flight
+    escalation. First run records a baseline and returns False."""
+    try:
+        m = os.stat(MODE_FILE).st_mtime
+    except OSError:
+        return False
+    seen = _read_rearm()
+    if seen is None:
+        _write_rearm(m)
+        return False
+    if abs(m - seen) > 1e-6:
+        _write_rearm(m)
+        return True
+    return False
 
 
 def capture_pane():
@@ -423,6 +459,28 @@ def main():
             last_fire_time = state["last_fire_time"]
             candidate_hash = state["candidate_hash"]
             candidate_count = state["candidate_count"]
+
+            if rearm_pending():
+                # wake-mode was touched (restart_wake) -> genuine re-arm.
+                if sig is not None:
+                    # CC idle now: consume this idle so any in-flight escalation
+                    # stops; do NOT fire again until CC works then goes idle anew.
+                    log("rearm reason=wake-mode-touched state=idle-consumed")
+                    write_state({"pending_hash": None, "pending_since": None,
+                                 "last_fired_hash": hashlib.sha256(sig.encode()).hexdigest(),
+                                 "fire_count": MAX_FIRES,
+                                 "last_fire_time": time.time(),
+                                 "candidate_hash": None, "candidate_count": 0})
+                else:
+                    # CC working now: arm fresh so the next working->idle fires.
+                    log("rearm reason=wake-mode-touched state=armed")
+                    write_state({"pending_hash": None, "pending_since": None,
+                                 "last_fired_hash": None, "fire_count": 0,
+                                 "last_fire_time": None, "candidate_hash": None,
+                                 "candidate_count": 0})
+                no_marker_polls = 0
+                time.sleep(POLL_SEC)
+                continue
 
             if sig is None:
                 no_marker_polls += 1

@@ -29,3 +29,7 @@ Even with the HA native backup, Matter devices must be re-paired by hand (fabric
 
 ## 8. COSMETIC: unifi config.txt.active shows mode 755 in git
 It lives on the FAT /boot mount where everything reads 755. Harmless.
+
+## 9. (Wake reliability — fixed 2026-06-02, one piece deferred)
+Fixed now: watcher re-arm (restart_wake genuinely stops an in-flight escalation), session-start self-test uses a long-enough task to be detected, bind-time wake verification + loud warning (no more silent dead wake), and the recreate bundle now records the wake channel so a reflash restores it.
+**Deferred (needs your nod / a test rig):** auto-seed PC_WAKE_URL + WAKE_TOKEN from the vault at bootstrap when the bind identity leaves them blank — they're fleet-wide constants (one PC listener URL + one shared token), so the installer *could* default them from the vault and make every bind/reflash wake-capable with zero data entry. I didn't commit this because it touches install.sh's secret-seeding + the vault and is untestable without an actual reflash. Say the word and I'll wire it.
