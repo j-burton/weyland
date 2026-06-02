@@ -88,7 +88,7 @@ PROMPT_MARKERS = [
 # interrupt" appear ONLY in the live spinner; the done-summary ("Brewed for
 # 25s", "Cooked for 5m") has no parenthesised timer, so idle reads as idle.
 # detect_prompt scopes this to the bottom status lines so body output can't trip it.
-WORKING_RE = re.compile(r'esc to interrupt|…\s*\(\d+\s*s', re.I)
+WORKING_RE = re.compile(r'esc to interrupt|…\s*\(\d+\s*[hms]', re.I)  # [hms]: timer is (45s early, (2m 30s past a minute
 
 SHOT_MESSAGES = {
     1: "CC idle — standing by",
