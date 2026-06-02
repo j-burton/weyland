@@ -204,10 +204,14 @@ whole wake loop is live end-to-end. Do it **every** session.
 1. **Arm the watcher** — call `restart_wake`; confirm `watcher_alive: true`.
 2. **Send CC a trivial task** — `tmux_send_keys` it to echo the date to a
    scratch file: `echo $(date) > /tmp/wake-test.txt`.
-3. **Wait for the `[HAL 9000 STANDING BY]` ping.** When CC finishes and goes
-   idle, the wake system should ping you. That ping arriving is the proof the
-   loop works. No ping in ~30s → the wake system is broken; fix it before you
-   trust it for anything real.
+3. **Go quiet and wait for the `[HAL 9000 STANDING BY]` ping.** End your turn
+   after sending the test — do NOT poll the pane. When CC finishes and goes
+   idle, the wake loop pings you and `[HAL 9000 STANDING BY]` arrives in the
+   chat as a new turn — proof the whole path is live (watcher → PC listener →
+   this chat). **Hard gate: do not begin any real work until that ping has
+   landed.** No ping in ~60s → the wake path is broken (commonly a blank
+   `PC_WAKE_URL`/`WAKE_TOKEN` in `/etc/weyland/wake.env`, or the PC listener is
+   down); fix it before you trust the loop.
 4. **Reset the watcher** — call `restart_wake` again to return to ARMED.
 5. **Hand Julian the read-only attach** — the single copy-paste tmux command
    (see the standing rule below).
