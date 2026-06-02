@@ -29,7 +29,7 @@ echo "[capture] $PI @ $TS"
 echo "[capture] wrote MANIFEST.auto.md"
 
 # 2) PROVISIONING — copy curated custom files from capture.list ("src [destname]" per line)
-SECRET_RX='(\.env$|creds|secret|password|token|session|\.key$|\.pem$|id_rsa|\.unifi)'
+SECRET_RX='(\.env$|\.key$|\.pem$|id_rsa|_creds(\.|$)|\.unifi_creds|secret|passwd|password|/\.netrc|session\.json$|cookies\.json$|\.token(\.|$)|api[_-]?key)'
 if [ -f capture.list ]; then
   while read -r src dest _; do
     case "${src:-}" in ''|\#*) continue;; esac
