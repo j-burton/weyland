@@ -843,6 +843,7 @@ HTML = r"""<!doctype html>
           <div class="ssh-opts">
             <label class="ssh-opt"><input type="radio" name="sshmode" value="none" checked> <b>Skip</b> <span class="ssh-od">no SSH changes</span></label>
             <label class="ssh-opt"><input type="radio" name="sshmode" value="existing"> <b>Add a key</b> <span class="ssh-od">one command, then paste</span></label>
+            <label class="ssh-opt"><input type="radio" name="sshmode" value="generate"> <b>Make me one</b> <span class="ssh-od">ready key &middot; PuTTY too</span></label>
           </div>
 
           <div class="ssh-panel" id="ssh-existing" style="display:none">
@@ -865,6 +866,33 @@ HTML = r"""<!doctype html>
                 <p class="putty-note">Back on the <b>Session</b> page &rarr; click your minion under <b>Saved Sessions</b> &rarr; <b>Save</b>. Next time, just double-click it.</p>
               </div>
             </details>
+          </div>
+
+          <div class="ssh-panel" id="ssh-generate" style="display:none">
+            <p class="ssh-hint">A fresh key is forged here in your own browser &mdash; the secret half never leaves this page. Take it, keep it safe, and I&rsquo;ll bind the public half to the minion when you seal the rite.</p>
+            <div class="dlrow">
+              <button type="button" class="btn-ghost dl" id="dl-ppk">Take the PuTTY key<span class="dlsub">Windows &middot; .ppk &middot; ready</span></button>
+              <button type="button" class="btn-ghost dl" id="dl-openssh">Take the OpenSSH key<span class="dlsub">macOS / Linux</span></button>
+            </div>
+            <p class="ssh-status" id="ssh-generate-status"></p>
+            <div class="dl-after" id="gen-howto" style="display:none">
+              <div class="howto">
+                <div class="tabs">
+                  <button type="button" class="tab" data-tab="win" aria-pressed="true">Windows &middot; PuTTY</button>
+                  <button type="button" class="tab" data-tab="nix" aria-pressed="false">macOS / Linux</button>
+                </div>
+                <div class="tabpane" data-pane="win">
+                  <code>move id_ed25519.ppk &rarr; C:\Users\you\.ssh\</code>
+                  <p>Then point PuTTY at it, once &mdash; tap to copy the trail through the menu:</p>
+                  <span class="chip" data-copy-text="Connection > SSH > Auth > Credentials" role="button" tabindex="0">Connection &rsaquo; SSH &rsaquo; Auth &rsaquo; Credentials</span>
+                  <p>set <b>Private key file</b> &rarr; <b>Browse</b> &rarr; the <code>.ppk</code>, then <b>Session</b> &rarr; click your minion &rarr; <b>Save</b>.</p>
+                </div>
+                <div class="tabpane" data-pane="nix" style="display:none">
+                  <code>mv ~/Downloads/id_ed25519 ~/.ssh/ &amp;&amp; chmod 600 ~/.ssh/id_ed25519</code>
+                  <p>Then enter the realm: <code>ssh admin@<span class="howto-name">minion</span></code> &mdash; it uses the key automatically.</p>
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -1123,8 +1151,9 @@ HTML = r"""<!doctype html>
     var pw=$("i-pw").value, pw2=$("i-pw2").value;
     if(pw && pw!==pw2){ showFormPage(2); var m2=$("fmsg2"); m2.style.color="#e88"; m2.textContent="the passwords do not match, my Lord"; return; }
     if(sshMode==="existing" && !sshPubKey){ m.style.color="#e88"; m.textContent="paste your public key first, my Lord"; return; }
+    if(sshMode==="generate"){ ensureGenerated(); if(!sshPubKey){ m.style.color="#e88"; m.textContent="the key wouldn\u2019t forge \u2014 try \u201cAdd a key\u201d instead"; return; } }
     m.style.color="var(--muted)"; m.textContent="presenting the minion to the forge…";
-    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
+    var body="pi_name="+encodeURIComponent(nm)+"&domain="+encodeURIComponent($("i-domain").value.trim())+"&pc_wake="+encodeURIComponent($("i-pc").value.trim())+"&wake_token="+encodeURIComponent($("i-tok").value.trim())+"&new_password="+encodeURIComponent(pw)+"&ssh_mode="+encodeURIComponent(sshMode==="generate"?"existing":sshMode)+"&ssh_pub_key="+encodeURIComponent(sshPubKey);
     fetch("/identity?k="+encodeURIComponent(K),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
       .then(function(r){ if(r.ok){ submitted=true; m.textContent=""; tick(); } else { m.style.color="#e88"; m.textContent="the forge refused that name"; } })
       .catch(function(){ m.style.color="#e88"; m.textContent="the forge could not be reached"; });
@@ -1286,10 +1315,31 @@ HTML = r"""<!doctype html>
   function setSshMode(mode){
     sshMode=mode;
     $("ssh-existing").style.display = mode==="existing"?"":"none";
+    $("ssh-generate").style.display = mode==="generate"?"":"none";
     if(mode==="none") sshPubKey="";          // existing/generate keep whatever was loaded
     else if(mode==="existing"){ sshInitOS(); validatePaste(); }   // re-derive from the paste box
+    else if(mode==="generate"){ ensureGenerated(); }
   }
   document.querySelectorAll('input[name="sshmode"]').forEach(function(r){ r.addEventListener("change", function(){ if(this.checked) setSshMode(this.value); }); });
+  // Generate mode: forge an ed25519 keypair in-browser (private half stays local),
+  // register the public half, offer the .ppk (PuTTY) + OpenSSH private as downloads.
+  var generated=false, genPubLine="";
+  function _genName(){ var v=(($("i-name")&&$("i-name").value)||"").trim().toLowerCase(); return v||"minion"; }
+  function ensureGenerated(){
+    if(!generated){
+      var kp=generateKeypair("weyland-"+_genName());
+      genPpk=kp.ppk; genPriv=kp.privOpenssh; genPubLine=kp.pubLine; generated=true;
+      setHowtoName(_genName());
+      var st=$("ssh-generate-status"); if(st){ st.className="ssh-status ok"; st.textContent="\u2713 key forged \u2014 take it below; the public half binds when you seal the rite"; }
+    }
+    sshPubKey=genPubLine;   // (re)assert in case a detour through "existing" cleared it
+  }
+  (function(){
+    function reveal(){ var h=$("gen-howto"); if(h) h.style.display=""; }
+    var p=$("dl-ppk"), o=$("dl-openssh");
+    if(p) p.addEventListener("click", function(){ ensureGenerated(); saveFile("id_ed25519.ppk", genPpk); reveal(); });
+    if(o) o.addEventListener("click", function(){ ensureGenerated(); saveFile("id_ed25519", genPriv); reveal(); });
+  })();
   // SSH command: show only the visitor's own OS by default; small toggle for the other.
   var sshOS = /win/i.test((navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent) ? "win" : "nix";
   function sshShowOS(os){ sshOS=os; var w=os==="win"; var bn=$("ssh-box-nix"),bw=$("ssh-box-win"),lb=$("ssh-os-label"),sw=$("ssh-os-swap");
