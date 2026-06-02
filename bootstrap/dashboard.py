@@ -1125,8 +1125,8 @@ HTML = r"""<!doctype html>
       }
       setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext", kind===null?"what manner of servant shall be forged, my Lord?":("answer the call, my Lord \u2014 name the "+kind));
     }
-    else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow","The minion is forged \u2014 one rite remains"); txt("subtext","bind it to Claude with the talisman below, then seal the rite"); }
-    else { setName(s.pi_name||pn); txt("eyebrow","A binding is upon us"); txt("subtext","Weyland's hammer falls — "+(s.pi_name||pn)+" shall be bound, Master"); }
+    else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow",(s.kind==="golem"?"The golem is forged":"The minion is forged")+" \u2014 one rite remains"); txt("subtext","bind it to Claude with the talisman below, then seal the rite"); }
+    else { setName(s.pi_name||pn); txt("eyebrow","A binding is upon us"); txt("subtext", (s.kind==="golem"?"the golem awakens \u2014 Weyland shapes it from afar":"the minion awakens \u2014 a mind of its own takes hold")); }
 
     var pickNeeded = (stage==="identity" && kind===null);
     var kp=$("kindpick"); if(kp) kp.style.display = pickNeeded?"":"none";

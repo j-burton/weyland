@@ -175,6 +175,8 @@ elif op == "meta":
     pi, dom = (a + ["", ""])[:2]
     if pi: s["pi_name"] = pi
     if dom: s["domain"] = dom
+elif op == "kind":
+    if a and a[0]: s["kind"] = a[0]
 elif op == "phase":
     # Stamp activity timestamps so the dashboard can tell working from stalled:
     # started_at the first time a phase goes running, updated_at on any change.
@@ -206,6 +208,7 @@ PY
 }
 state_init()         { _state_op init "${1:-}" "${2:-}" "${3:-}"; }
 state_meta()         { _state_op meta "${1:-}" "${2:-}"; }
+state_kind()         { _state_op kind "${1:-}"; }
 state_phase()        { _state_op phase "$1" "$2"; }
 state_action()       { _state_op action "$1" "${2:-}" "${3:-}"; }   # provider url [code]
 state_action_clear() { _state_op action_clear; }
@@ -348,7 +351,7 @@ _checklist_body() {
   local current="$1" current_state="$2" completed="$3"
   local entry name label marker
   printf '%s\n' "$CHECKLIST_RULE"
-  printf ' weyland bootstrap\n'
+  printf '  %s, the %s awakens\n' "${PI_NAME:-the minion}" "${KIND:-minion}"
   printf '%s\n' "$CHECKLIST_RULE"
   for entry in "${PHASES[@]}"; do
     name="${entry%%:*}"
@@ -450,6 +453,7 @@ render_checklist() {
 WEYLAND_NONCE="${WEYLAND_NONCE:-}"   # may be inherited on a start-over relaunch
 WEYLAND_DASH_URL=""
 WEYLAND_DASH_ACTIVE=""
+WEYLAND_COMPLETED=""   # 1 once the rite fully completes; _cleanup then LEAVES the dashboard up so the operator can read details + seal
 phase_dashboard_start() {
   if [ -n "${WEYLAND_PLAIN_CHECKLIST:-}" ]; then
     log "dashboard skipped (WEYLAND_PLAIN_CHECKLIST) — terminal checklist only"
@@ -666,6 +670,7 @@ phase_identity() {
   if [ -n "${PI_NAME:-}" ] && [ -n "${DOMAIN:-}" ]; then
     log "identity already set: PI_NAME=${PI_NAME} DOMAIN=${DOMAIN}"
     state_meta "$PI_NAME" "$DOMAIN"
+    state_kind "${KIND:-minion}"
     return 0
   fi
 
@@ -697,6 +702,7 @@ phase_identity() {
   KIND="${IDENT_KIND:-minion}"
   case "$KIND" in minion|golem) : ;; *) KIND="minion" ;; esac
   save_state KIND "$KIND"
+  state_kind "$KIND"
   log "kind: ${KIND}"
 
   # System hostname to match PI_NAME (mDNS .local); patch /etc/hosts 127.0.1.1.
@@ -1516,7 +1522,7 @@ phase_summary() {
   log "Bootstrap complete."
 
   local LOCAL_IP
-  LOCAL_IP="$(hostname -I | awk '{print $1}')"
+  LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')" || LOCAL_IP=""
 
   # Is the weyland PAT present on this Pi yet? (Never print the value.)
   local pat_status
@@ -1622,7 +1628,10 @@ EOF
 # Restore the terminal + stop the dashboard. Used on every exit.
 _cleanup() {
   _checklist_teardown
-  phase_dashboard_stop
+  # On a fully-completed rite, LEAVE the dashboard running: the operator still
+  # needs it to read the connector details and seal (the seal POSTs /done, which
+  # shuts the dashboard down itself). Tear it down only on failure / interrupt.
+  [ -n "${WEYLAND_COMPLETED:-}" ] || phase_dashboard_stop
   rm -f "$STATE_DIR/bootstrap.pid" 2>/dev/null || true
 }
 # Ctrl-C / SIGTERM / SSH hangup: clean up, kill any background children
@@ -1733,6 +1742,7 @@ main() {
   _checklist_teardown
   phase_summary
   state_phase summary done
+  WEYLAND_COMPLETED=1   # rite finished — _cleanup now leaves the wizard up for the operator
 }
 
 main "$@"
