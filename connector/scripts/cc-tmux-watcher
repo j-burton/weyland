@@ -386,7 +386,13 @@ def fire_ctx_alert(threshold, pct):
             log(f"ctx-pushcut-no-secret threshold={threshold}")
             return
         url = f"https://api.pushcut.io/{secret}/notifications/CC_Needs_Julian"
-        body = json.dumps({"text": text[:200]}).encode()
+        # Julian's phone gets a SHORT human FYI, NOT the chat-Claude directive
+        # above (which says "Ctrl-C CC" / "Do NOT wake Julian" etc. — nonsense
+        # to receive on a phone). The directive still goes to chat-Claude on the
+        # PC channel; this is just the human-readable heads-up.
+        human = (f"[{PI_NAME}] CC context {pct}% (over {threshold}%). "
+                 f"chat-Claude is handling it (wrap up + restart CC fresh). FYI.")
+        body = json.dumps({"text": human[:200]}).encode()
         req = urllib.request.Request(
             url, data=body, method="POST",
             headers={"Content-Type": "application/json"})

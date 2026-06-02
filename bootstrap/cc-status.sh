@@ -3,9 +3,8 @@
 #
 # Claude Code pipes a JSON blob on stdin (see `statusLine` in settings.json) and
 # renders whatever single line we print at the bottom of the pane. We show the
-# context-window usage as a percentage, but ONLY once it reaches 50% — below
-# that the line is intentionally blank so it stays out of the way until it
-# actually matters.
+# context-window usage as a percentage at ALL times so the level is visible at
+# a glance; the watcher still only ALERTS once it crosses 60/70/80%.
 #
 # The percentage comes straight from `context_window.used_percentage` (already
 # computed by Claude Code, input+cache tokens only). If a CC version omits it we
@@ -50,10 +49,8 @@ try:
 except (TypeError, ValueError):
     sys.exit(0)
 
-# Hidden below 50% — nothing printed.
-if pct < 50:
-    sys.exit(0)
-
+# Always shown so the context level is visible in the pane at a glance; the
+# watcher still only ALERTS at 60/70/80%, this is just the on-screen readout.
 p = int(pct)  # floor to a whole number
 if p > 100:
     p = 100
