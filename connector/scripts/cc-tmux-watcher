@@ -78,7 +78,17 @@ CTX_CLEAR_POLLS = 5
 PROMPT_MARKERS = [
     "⏵⏵ bypass permissions",
 ]
-WORKING_MARKER = "esc to interrupt"
+# CC is "working" (animating) when the pane shows a spinner, a live elapsed
+# timer like "(5s", a token counter, or an interrupt/think hint. Ported from
+# argos/atlas (the reliable reference). Width-independent on purpose: the lone
+# "esc to interrupt" hint truncates off a narrow (e.g. 63-col) pane when a
+# client attaches, but these tokens sit near the START of the status line, so a
+# narrow attach can't hide them. NOTE: the done-summary line ("Cooked for 5m",
+# "Churned for 20s") uses a different glyph and has NO "(Ns"/tokens, so it does
+# NOT match here — an idle pane is still correctly seen as idle.
+WORKING_RE = re.compile(
+    r'esc to interrupt|\(\d+\s*s|[✶✳✴✦⋆●◐◓◑◒]|tokens|crunch|running…|waiting…|thinking',
+    re.I)
 
 SHOT_MESSAGES = {
     1: "CC idle — standing by",
@@ -198,8 +208,8 @@ def detect_prompt(text):
     status bar, so we grab the output above it for notification context."""
     if not text:
         return None
-    if WORKING_MARKER in text:
-        return None  # CC is working, not idle — don't wake
+    if WORKING_RE.search(text):
+        return None  # CC is animating/working (spinner/timer/tokens) — not idle
     for marker in PROMPT_MARKERS:
         if marker in text:
             idx = text.find(marker)
