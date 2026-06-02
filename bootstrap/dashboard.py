@@ -993,6 +993,7 @@ HTML = r"""<!doctype html>
   var reachedComplete=false;  // we have seen result.ready at least once
   var sealed=false;           // the operator clicked the seal
   var POLL=null;              // polling interval handle
+  var autoOpenedDetails=false; // talisman auto-expanded once at completion
   var nameTouched=false;   // true once the operator types in the name field
   // Continue/restart choice screen. choiceArmed is decided ONCE from the FIRST
   // /state (so it only fires for a run THIS page session didn't start — never
@@ -1085,7 +1086,7 @@ HTML = r"""<!doctype html>
       }
       setName(liveName()); txt("eyebrow","The rite of binding awaits"); txt("subtext","answer the call, my Lord — name the minion");
     }
-    else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow","The rite is complete"); txt("subtext","forged in steel · sworn by ancient oath · the Old One's will is done"); }
+    else if(stage==="complete"){ setName(s.pi_name||pn); txt("eyebrow","The minion is forged \u2014 one rite remains"); txt("subtext","bind it to Claude with the talisman below, then seal the rite"); }
     else { setName(s.pi_name||pn); txt("eyebrow","A binding is upon us"); txt("subtext","Weyland's hammer falls — "+(s.pi_name||pn)+" shall be bound, Master"); }
 
     $("form").style.display = stage==="identity"?"":"none";
@@ -1121,6 +1122,7 @@ HTML = r"""<!doctype html>
     if(ready){ d.style.display=""; var r=s.result;
       txt("f-name",s.pi_name||""); txt("f-url",r.mcp_url); txt("f-cid",r.client_id||"weyland-mcp-claude-ai"); txt("f-bearer",r.bearer);
       href("f-ct",r.consent_tunnel); href("f-cl",r.consent_local); href("f-repo",r.repo); setval("f-proj",r.project_instructions);
+      if(!autoOpenedDetails){ autoOpenedDetails=true; document.body.classList.add("details-open"); var dz=$("disclose"); if(dz){ dz.setAttribute("aria-expanded","true"); dz.innerHTML="Seal the talisman \u25B2"; } }
     } else d.style.display="none";
   }
   function gate(){ $("form").style.display="none"; $("roster").style.display="none"; $("authcard").style.display="none"; $("details").style.display="none"; $("gate").style.display=""; }
@@ -1142,10 +1144,19 @@ HTML = r"""<!doctype html>
     if(reachedComplete){ txt("subtext","the rite had completed \u2014 the details above still hold. once copied, this page is safe to close, my Lord"); }
     else { txt("subtext","the page can\u2019t reach the minion \u2014 it may have finished, or the link dropped. still trying to reach it\u2026"); }
   }
+  function showCompleteOffline(){
+    document.body.setAttribute("data-state","complete");
+    document.body.setAttribute("data-link","lost");
+    document.body.classList.remove("forge-active","auth-modal");
+    ["authcard","choice","gate"].forEach(function(id){ var el=$(id); if(el) el.style.display="none"; });
+    var d=$("details"); if(d){ d.style.display=""; document.body.classList.add("details-open"); }
+    txt("eyebrow","THE FORGE HAS GONE QUIET");
+    txt("subtext","but the minion is forged \u2014 the talisman below still holds true. bind it to Claude, then you may close this page");
+  }
   function onPollFail(){
     lostTicks++;
     if(sealed){ showSealed(); stopPoll(); return; }
-    if(reachedComplete && lostTicks>=2){ showSealed(); stopPoll(); return; }
+    if(reachedComplete && lostTicks>=2){ showCompleteOffline(); stopPoll(); return; }
     if(lostTicks>=4){ showLost(); }
   }
   function tick(){
