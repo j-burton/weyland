@@ -326,14 +326,18 @@ Calling **`restart_wake`** (flips `wake-mode` off → on) returns the watcher
 to **ARMED** — the correct state between tasks. It also reports
 `watcher_alive` and the `watcher_pid` so you can confirm it's actually running.
 
-**Drill — arm the watcher when CC FINISHES a task, never when you dispatch
-one.** The sequence: hand CC the task, then **go quiet** — stop polling the
-pane so the watcher's ping can reach you. The watcher flips to ACTIVE on its
-own while CC works and pings you when CC goes idle. Only *after* CC has
-finished, and you've read the pane and reported to Julian, do you call
-`restart_wake` — that clears the just-finished task's ping and re-arms for the
-next task. Never arm mid-task / at dispatch: that disturbs the very ping you're
-waiting on. Arming is the between-tasks action, full stop.
+**Drill — `restart_wake` the INSTANT a ping reaches you, then take your time.**
+Hand CC the task, then **go quiet** — stop polling the pane so the watcher's
+ping can reach you. The watcher flips to ACTIVE on its own while CC works and
+pings you (`[HAL 9000 STANDING BY]`) when CC goes idle. The MOMENT that ping
+lands, your first action is `restart_wake`: it consumes that idle and silences
+the escalation ladder (shots 2→5 → Julian's phone) — it tells the watcher "I'm
+alive, handling it." THEN read the pane, think, and reply for however long you
+need. Your turn can run minutes while CC sits idle, so if you wait until *after*
+you've finished to re-arm, the ladder bombards Julian in the meantime. The
+escalation is a dead-man's-switch — it only keeps firing if you do NOT re-arm
+(i.e. you are genuinely dead/unresponsive). Never arm mid-task / at dispatch;
+arm only on a ping from CC. Arming = "stand down, I've got this."
 
 ### Standing rule: offer Julian a read-only window
 
