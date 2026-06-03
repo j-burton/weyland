@@ -89,6 +89,24 @@ Headroom is **measured on demand**, not read from a doc.
 - [ ] Committed **and pushed** in every place it lives? Verified (git status clean / `whoami` / re-read)?
 - [ ] Anything you couldn't update now → recorded in a `handoffs/` doc so it isn't lost.
 
+### How to report it (the receipt)
+
+Report the DoD back to Julian as the closing receipt — one item per block, in this
+shape: a tick or cross **alone on the first line**, then the actions taken (or the
+reason no action was needed) on the lines beneath.
+
+```
+✓  Fleet-standard doc — canonical edited + every copy propagated
+   - <what changed> in <canonical file>; propagated to <every copy>, all identical.
+
+✗  Secret changed?
+   - None — nothing added or rotated, so nothing to update.
+```
+
+A tick means there was work and it is done; a cross means nothing was needed — with
+the why. The crosses carry as much weight as the ticks: they show the item was
+considered and consciously cleared, not forgotten.
+
 ## 6. Target design (AGREED — BUILT 2026-06-03)
 
 The duplication in §1 (FLEET.md copied to every Pi) is the root of both the drift
