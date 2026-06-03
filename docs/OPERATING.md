@@ -7,7 +7,7 @@ How chat-Claude runs weyland sessions.
 (i.e. Julian opened a chat in a project pointed at the weyland repo,
 not at a specific minion)
 
-1. Read this file, plus DESIGN.md and NEW_PI.md.
+1. Read this file, plus DESIGN.md, NEW_PI.md, and DOC-MAINTENANCE.md.
 2. Ask Julian what he wants to do.
 
 Common requests:
