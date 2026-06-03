@@ -121,8 +121,10 @@ them) is now done — a pointer lives in `templates/README.md`, and the per-Pi F
 
 ## 8. This manual
 
-Canonical: `weyland/docs/DOC-MAINTENANCE.md` (single copy). Future: referenced from
-the per-Pi README so every chat finds it on landing (part of §6's deferred wiring).
+Canonical: `weyland/docs/DOC-MAINTENANCE.md` (single copy). Wired into the per-Pi
+README **landing sequence** (top of file, with a fetch command) so every chat reads
+it on landing — added 2026-06-03 after chats twice missed it, and the corrected
+README propagated to every per-Pi repo.
 
 ## Status (2026-06-03)
 - **Done:** NZ golem `homebridge` built; its per-Pi repo created and cloned; repo
@@ -131,5 +133,9 @@ the per-Pi README so every chat finds it on landing (part of §6's deferred wiri
   `sites/sunflower.md`); FLEET.md reduced to the index + fleet-wide sections; `huginn`
   + `homebridge` added to the roster; the per-Pi FLEET.md copies retired to redirect
   stubs (argos excluded); born-wired pointer added to `templates/README.md`.
+- **Done 2026-06-03:** manual wired into the README landing sequence (was a single
+  buried line at L501, and missing entirely from deployed copies) + fetch command;
+  corrected README propagated to every per-Pi repo; new Pis inherit it via the
+  bootstrap template. Fixes the "chat didn't know the manual existed" bug.
 - **Still deferred (until weyland stable):** rename the Lakeshore repos
   (`inkypi-pi`→`lakeshore-inkypi`, etc.) + update bootstrap naming logic.

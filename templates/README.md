@@ -14,6 +14,16 @@ the four orientation files in this order:
 
 Then read the rest of this README so you know how to talk to Julian.
 
+**Before you record or change anything about this Pi or the fleet, read the Doc
+Maintenance Manual — first, every chat.** It is the single source of truth for
+which docs exist, which are central vs per-Pi, and what to update when. Chats
+have landed without reading it and gotten doc upkeep wrong; this line exists to
+stop that. It lives in the public `weyland` repo, **not on this Pi** — fetch it:
+
+```
+curl -fsSL https://raw.githubusercontent.com/j-burton/weyland/main/docs/DOC-MAINTENANCE.md
+```
+
 ## These docs are a fleet standard — do not restructure them
 
 This doc set — README, IDENTITY, HARDWARE, CURRENT_STATE, MODULES, plus the recreate/ rebuild bundle — is identical on
