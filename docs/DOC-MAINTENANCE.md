@@ -88,7 +88,7 @@ Headroom is **measured on demand**, not read from a doc.
 - [ ] Committed **and pushed** in every place it lives? Verified (git status clean / `whoami` / re-read)?
 - [ ] Anything you couldn't update now → recorded in a `handoffs/` doc so it isn't lost.
 
-## 6. Target design (AGREED — not yet built, DEFERRED)
+## 6. Target design (AGREED — BUILT 2026-06-03)
 
 The duplication in §1 (FLEET.md copied to every Pi) is the root of both the drift
 and the per-Pi update cost. Agreed direction:
@@ -107,7 +107,7 @@ and the per-Pi update cost. Agreed direction:
   of fleet size.
 
 Wiring this manual + the registries into the per-Pi README (so every chat lands on
-them) is part of this deferred step.
+them) is now done — a pointer lives in `templates/README.md`, and the per-Pi FLEET.md copies are redirect stubs.
 
 ## 7. Repo naming (adopted; existing migration DEFERRED)
 
@@ -127,6 +127,9 @@ the per-Pi README so every chat finds it on landing (part of §6's deferred wiri
 ## Status (2026-06-03)
 - **Done:** NZ golem `homebridge` built; its per-Pi repo created and cloned; repo
   renamed to the site scheme (`sunflower-homebridge`); this manual written.
-- **Deferred (until docs + weyland stable):** build the per-site registries (retire
-  FLEET.md's per-Pi copies); wire this manual + registries into the README and roll
-  out; rename the Lakeshore repos + update bootstrap naming.
+- **Done 2026-06-03:** per-site registries BUILT in the vault (`sites/lakeshore.md`,
+  `sites/sunflower.md`); FLEET.md reduced to the index + fleet-wide sections; `huginn`
+  + `homebridge` added to the roster; the per-Pi FLEET.md copies retired to redirect
+  stubs (argos excluded); born-wired pointer added to `templates/README.md`.
+- **Still deferred (until weyland stable):** rename the Lakeshore repos
+  (`inkypi-pi`→`lakeshore-inkypi`, etc.) + update bootstrap naming logic.

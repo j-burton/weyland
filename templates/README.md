@@ -494,6 +494,13 @@ Weyland's source: https://github.com/j-burton/weyland
 
 ## The vault (fleet secrets)
 
+**The fleet map lives here, not on this Pi.** Roster + topology are central in the
+vault `j-burton/weyland-secrets`: `FLEET.md` (index + fleet-wide) plus per-site
+registries `sites/lakeshore.md` and `sites/sunflower.md`. This Pi's own `FLEET.md` is
+only a redirect stub. Before editing any shared/fleet doc, read
+`weyland/docs/DOC-MAINTENANCE.md` — it says what's central vs per-Pi and how to keep
+copies from drifting.
+
 Fleet secrets (Pushcut webhook, etc.) live in a private `weyland-secrets`
 repo, fetched during bootstrap via the PAT — never in the public weyland
 repo. To add a new fleet-wide secret, add it to that repo's `secrets.env`
