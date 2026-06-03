@@ -134,7 +134,7 @@ The text pasted into a Claude project's **Instructions** field is a
 authoritative — the docs are.** Because it is set by hand per project, it
 drifts the moment the canonical changes, and no repo push can update it.
 
-- The canonical block carries a **version stamp** (e.g. `v2 (2026-06-03)`); the
+- The canonical block carries a **version stamp** (e.g. `v3 (2026-06-03)`); the
   pasted copy carries the same stamp.
 - **On landing, a chat compares its stamp against the canonical block's stamp in
   `README.md`.** If they differ the paste is stale: **do not silently follow

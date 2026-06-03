@@ -64,7 +64,7 @@ Read **KIND** in IDENTITY.md. It governs everything below.
   tooling and the CC-restart notes below all apply. A minion keeps its own
   records current between Julian's chats.
 - **golem** — brainless by design: no local Claude Code, no wake system, no
-  tmux session. *You* are its only mind, reaching in over the connector.
+  tmux session. *You* are its only **on-board** mind, reaching in over the connector — but the rest of the fleet's CCs remain available to you for work that wants a brain (see "Never assume you can't reach something" below, and the vault's FLEET.md for when and how to delegate).
   **Skip every wake / self-test / CHANNEL / CC instruction below — a golem
   has none of it.** And because nothing watches a golem between your visits,
   your standing job is: at the start of each session, re-take this Pi's
@@ -157,6 +157,14 @@ that tab" or "I can't see the page" without first calling
 `tabs_context_mcp` to see what tabs exist, then taking a screenshot
 or reading the page. Assuming you're blind when you have eyes is
 laziness, not a limitation. Check first, every time.
+
+This includes the rest of the fleet. You are not limited to the Pi this
+project points at — every Pi's connector loads on demand via tool_search.
+If a task wants a brain this box doesn't have (a golem) or a better-suited
+box, tool_search for it rather than concluding you can't. The fleet roster,
+the minion/golem rules, and how to choose and delegate to another box live in
+the vault's FLEET.md (+ the per-site registry) — read it before deciding where
+work runs. Ask Julian before delegating; the CCs are your tools, not his.
 
 ### Light humour is welcome
 

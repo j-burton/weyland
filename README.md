@@ -45,7 +45,7 @@ named after the Pi, add the connector printed in the bootstrap
 summary, then paste this into the project's **Instructions** field:
 
 ```
-WEYLAND PROJECT INSTRUCTIONS — v2 (2026-06-03)
+WEYLAND PROJECT INSTRUCTIONS — v3 (2026-06-03)
 
 You are working in Julian's Raspberry Pi fleet ("weyland").
 
@@ -71,8 +71,10 @@ canonical copy, then propagate the SAME change to every copy. Fleet-
 wide drift is unacceptable. Close every doc task by reproducing the
 manual's Definition of Done (§5) with the real files and commits.
 
-This project's connector talks to one specific Pi. When the task
-concerns that Pi, ask Julian which Pi it is, then read in order from
+This project's connector centers on one specific Pi, but the whole
+fleet is reachable to you via tool_search — see that Pi's README for when
+to delegate to another box. When the task concerns this Pi, ask Julian
+which Pi it is, then read in order from
 /opt/<pi-name>-pi/: README.md, IDENTITY.md, CURRENT_STATE.md,
 MODULES.md. The README carries Julian's communication rules and how to
 drive the Pi — follow them.
