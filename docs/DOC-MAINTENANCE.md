@@ -71,6 +71,7 @@ Headroom is **measured on demand**, not read from a doc.
 | weyland behaviour (bootstrap / connector / wake) | weyland `docs/` (DESIGN, OPERATING, NEW_PI, connector README, templates README) — per OPERATING.md |
 | a fleet secret (add / rotate) | vault `secrets.env` + vault `README.md` glossary |
 | renamed a repo | GitHub rename + that Pi's `mcp.env` (`WEYLAND_PI_REPO`/`DIR`) + local clone dir + git remote + fleet map entry (+ bootstrap naming if scheme-wide) |
+| the project Instructions block (paste-into-project text) | bump its version stamp in `README.md` → re-paste into every live project (a stale paste self-flags via the stamp); see §9 |
 
 ## 4. Propagation — rolling out a duplicated doc
 
@@ -125,6 +126,32 @@ Canonical: `weyland/docs/DOC-MAINTENANCE.md` (single copy). Wired into the per-P
 README **landing sequence** (top of file, with a fetch command) so every chat reads
 it on landing — added 2026-06-03 after chats twice missed it, and the corrected
 README propagated to every per-Pi repo.
+
+## 9. The project Instructions block — authority, drift, and "done"
+
+The text pasted into a Claude project's **Instructions** field is a
+**hand-pasted copy** of the canonical block in `README.md`. It is **not
+authoritative — the docs are.** Because it is set by hand per project, it
+drifts the moment the canonical changes, and no repo push can update it.
+
+- The canonical block carries a **version stamp** (e.g. `v2 (2026-06-03)`); the
+  pasted copy carries the same stamp.
+- **On landing, a chat compares its stamp against the canonical block's stamp in
+  `README.md`.** If they differ the paste is stale: **do not silently follow
+  either copy** — stop, tell Julian, and let him decide how to reconcile
+  (usually re-paste). The docs win by default; the reconciliation is his call.
+- **Change the canonical block → bump the stamp**, then re-paste into every live
+  project. The stamp is the backstop: the next chat in any un-re-pasted project
+  surfaces the mismatch on its own.
+
+### "Decided" is not "done"
+
+Reaching a decision in chat does **not** mean a doc changed. Never leave an
+agreed change in a state where Julian could assume it was actioned. After
+agreeing something, **drive it to an explicit push-or-not**: say plainly that
+nothing is committed yet and ask to go execute — and keep asking rather than
+let it slide. The filled-in Definition of Done (§5), with the real files and
+commits, is the proof the work landed; agreement alone is not.
 
 ## Status (2026-06-03)
 - **Done:** NZ golem `homebridge` built; its per-Pi repo created and cloned; repo

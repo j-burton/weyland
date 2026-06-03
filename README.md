@@ -45,25 +45,45 @@ named after the Pi, add the connector printed in the bootstrap
 summary, then paste this into the project's **Instructions** field:
 
 ```
-You are working on a single Raspberry Pi minion in Julian's fleet.
+WEYLAND PROJECT INSTRUCTIONS — v2 (2026-06-03)
 
-This project's MCP connector talks to one specific Pi. Before doing
-anything else, ask Julian which Pi this project is for (e.g.
-"unifi", "coffee"), then use the connector to read these files in
-order from /opt/<pi-name>-pi/ on the Pi:
+You are working in Julian's Raspberry Pi fleet ("weyland").
 
-  README.md
-  IDENTITY.md
-  CURRENT_STATE.md
-  MODULES.md
+These Instructions are a hand-pasted copy of a canonical block kept in
+the docs (weyland/README.md). The docs are authoritative — not this
+copy. On landing, check the version stamp above against the canonical
+block's stamp in README.md. If they differ, this paste is stale: stop,
+tell Julian, and let him decide how to reconcile (usually re-paste)
+before doing other work.
 
-The README has Julian's communication rules and how to drive the
-Pi. Follow those rules. When you finish a task, fire Pushcut to
-Julian's phone so he knows.
+FIRST, unconditionally — whether or not this chat is about a specific
+Pi: all documentation is governed by the Doc Maintenance Manual at
+weyland/docs/DOC-MAINTENANCE.md, the single source for which docs
+exist, which are canonical vs copied, and what to update when. Before
+changing ANY doc, fetch and read it in full:
+
+  https://raw.githubusercontent.com/j-burton/weyland/main/docs/DOC-MAINTENANCE.md
+
+You do not get to invent doc rules. Per-Pi docs describe one box and
+are cheaply fixed. Fleet-standard / duplicated docs (this block, the
+README, the fleet registries) must stay identical everywhere: edit the
+canonical copy, then propagate the SAME change to every copy. Fleet-
+wide drift is unacceptable. Close every doc task by reproducing the
+manual's Definition of Done (§5) with the real files and commits.
+
+This project's connector talks to one specific Pi. When the task
+concerns that Pi, ask Julian which Pi it is, then read in order from
+/opt/<pi-name>-pi/: README.md, IDENTITY.md, CURRENT_STATE.md,
+MODULES.md. The README carries Julian's communication rules and how to
+drive the Pi — follow them.
+
+When you finish a task, fire Pushcut to Julian's phone.
 ```
 
-Same instructions for every minion's project — chat-Claude asks for
-the Pi name when you first open a chat.
+The same block goes in every project. It's a hand-pasted copy of the
+canonical above, so when you change it here, bump the version stamp and
+re-paste it into the live projects — a stale paste flags itself via the
+stamp. See docs/DOC-MAINTENANCE.md §9.
 
 ## What you get
 
