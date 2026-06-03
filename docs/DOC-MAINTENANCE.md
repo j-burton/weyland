@@ -92,20 +92,31 @@ Headroom is **measured on demand**, not read from a doc.
 ### How to report it (the receipt)
 
 Report the DoD back to Julian as the closing receipt — one item per block, in this
-shape: a tick or cross **alone on the first line**, then the actions taken (or the
+shape: a status icon **alone on the first line**, then the actions taken (or the
 reason no action was needed) on the lines beneath.
 
+The icons:
+
+- ✅ **Done** — there was work, it's complete and verified.
+- ➖ **Not needed** — considered, nothing to do (N/A).
+- ⏳ **Outstanding** — real work remains, deferred or pending, and recorded (in a handoff) so it isn't lost.
+- 🚩 **Needs Julian** — blocked on his decision, a credential, or an on-site action.
+- ❌ **Failed** — attempted and broke; needs fixing.
+
 ```
-✓  Fleet-standard doc — canonical edited + every copy propagated
+✅  Fleet-standard doc — canonical edited + every copy propagated
    - <what changed> in <canonical file>; propagated to <every copy>, all identical.
 
-✗  Secret changed?
+➖  Secret changed?
    - None — nothing added or rotated, so nothing to update.
+
+🚩  Live project Instructions
+   - Re-paste the latest block; the version stamp will flag any project you miss.
 ```
 
-A tick means there was work and it is done; a cross means nothing was needed — with
-the why. The crosses carry as much weight as the ticks: they show the item was
-considered and consciously cleared, not forgotten.
+✅ and ➖ both mean "all clear," so a glance lands the eye only on ⏳ / 🚩 / ❌ — the
+lines that carry consequences. The clears matter as much as the dones: they show an
+item was considered and consciously cleared, not forgotten.
 
 ## 6. Target design (AGREED — BUILT 2026-06-03)
 
