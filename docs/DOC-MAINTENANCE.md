@@ -193,5 +193,23 @@ commits, is the proof the work landed; agreement alone is not.
   buried line at L501, and missing entirely from deployed copies) + fetch command;
   corrected README propagated to every per-Pi repo; new Pis inherit it via the
   bootstrap template. Fixes the "chat didn't know the manual existed" bug.
+- **Done 2026-06-03:** project Instructions block hardened — manual-awareness made
+  unconditional at the top (no longer contingent on reading the per-Pi README), a
+  version **stamp** added so a stale paste self-flags, and §9 written: the block is a
+  non-authoritative hand-copy (docs win), a stamp mismatch means **notify-and-reconcile**,
+  and "**decided isn't done**" (drive every agreed change to an explicit push). Block
+  v2→v3 — "one specific Pi" reframed: the whole fleet is reachable via `tool_search`.
+- **Done 2026-06-03:** fleet-as-tool / delegation model written into the central
+  `FLEET.md` (vault) — minion vs golem as a **brain, not brawn** distinction; "use CC =
+  route to a box that has one"; pick the most-suitable CC; split tasks along the
+  hardware/portable seam; fan-out; ask-first. Plus a **placement workflow** (scan basics
+  → read detail + live-probe → go/backtrack → propose) that is **request-triggered, not
+  a startup ritual**, and flags a *materially* better box even when one is named. The
+  INDEX "don't duplicate / assemble fresh" philosophy reconciled to
+  registries-hold-durable-basics + live-facts-always-probed. Per-Pi README given pointers
+  to it (golem bullet + "check first") and propagated identically to every per-Pi repo.
+- **Done 2026-06-03:** DoD receipt **reporting format** standardised (§5) — a 5-state
+  icon set (✅ done · ➖ not needed · ⏳ outstanding · 🚩 needs Julian · ❌ failed),
+  icon alone on the first line, actions or reason-for-no-action beneath.
 - **Still deferred (until weyland stable):** rename the Lakeshore repos
   (`inkypi-pi`→`lakeshore-inkypi`, etc.) + update bootstrap naming logic.
